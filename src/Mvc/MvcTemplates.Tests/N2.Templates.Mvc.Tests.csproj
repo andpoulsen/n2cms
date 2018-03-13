@@ -149,10 +149,6 @@
     </BootstrapperPackage>
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\Framework\Extensions.Tests\N2.Extensions.Tests.csproj">
-      <Project>{84876FD2-9055-4A02-A163-1495E5659BC7}</Project>
-      <Name>N2.Extensions.Tests</Name>
-    </ProjectReference>
     <ProjectReference Include="..\..\Framework\Tests\N2.Tests.csproj">
       <Project>{4B026365-D03B-40B4-862B-11608BA756B0}</Project>
       <Name>N2.Tests</Name>
