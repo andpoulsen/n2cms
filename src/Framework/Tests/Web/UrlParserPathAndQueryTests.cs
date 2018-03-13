@@ -37,8 +37,8 @@ namespace N2.Tests.Web
         {
             mocks.ReplayAll();
 
-            string url = Url.Parse("http://www.n2cms.com/item1.aspx?item=1").PathAndQuery;
-            Assert.AreEqual("/item1.aspx?item=1", url);
+            string url = Url.Parse("http://www.n2cms.com/item1.aspx?n2item=1").PathAndQuery;
+            Assert.AreEqual("/item1.aspx?n2item=1", url);
         }
 
         [Test]
@@ -46,8 +46,8 @@ namespace N2.Tests.Web
         {
             mocks.ReplayAll();
 
-            string url = Url.Parse("http://www.n2cms.com/item1/item2/item3/item4.aspx?item=1&page=2&optional=yes").PathAndQuery;
-            Assert.AreEqual("/item1/item2/item3/item4.aspx?item=1&page=2&optional=yes", url);
+            string url = Url.Parse("http://www.n2cms.com/item1/item2/item3/item4.aspx?n2item=1&n2page=2&optional=yes").PathAndQuery;
+            Assert.AreEqual("/item1/item2/item3/item4.aspx?n2item=1&n2page=2&optional=yes", url);
         }
 
         [Test]
@@ -63,7 +63,7 @@ namespace N2.Tests.Web
         public void PagesOutsideStartPage_AreReferenced_ThroughTheirRewrittenUrl()
         {
             host = new Host(wrapper, 10, 1);
-			parser = TestSupport.Setup(persister, wrapper, host);
+            parser = TestSupport.Setup(persister, wrapper, host);
 
             CreateDefaultStructure();
             ContentItem root = CreateOneItem<PageItem>(10, "root", null);
@@ -72,8 +72,8 @@ namespace N2.Tests.Web
 
             mocks.ReplayAll();
 
-			Assert.AreEqual(parser.BuildUrl(root), root.FindPath(PathData.DefaultAction).RewrittenUrl.ToString());
-			Assert.AreEqual(parser.BuildUrl(outside1), outside1.FindPath(PathData.DefaultAction).RewrittenUrl.ToString());
+            Assert.AreEqual(parser.BuildUrl(root).ToString(), root.FindPath(PathData.DefaultAction).GetRewrittenUrl().ToString());
+            Assert.AreEqual(parser.BuildUrl(outside1).ToString(), outside1.FindPath(PathData.DefaultAction).GetRewrittenUrl().ToString());
         }
     }
 }

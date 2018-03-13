@@ -1,49 +1,48 @@
-﻿using System.Collections.Generic;
-using System.Linq;
+using System;
 using N2.Collections;
-using N2.Web;
 using N2.Persistence;
+using N2.Web;
 
 namespace N2
 {
 	/// <summary>
-	/// Provides access to common functions.
+	///     Provides access to common functions.
 	/// </summary>
 	public static class Content
 	{
 		/// <summary>
-		/// Provides access to filters applyable to content items.
+		///     Provides access to filters applyable to content items.
 		/// </summary>
 		public static FilterHelper Is
 		{
-			get { return new FilterHelper(Context.Current); }
+			get { return new FilterHelper(() => Context.Current); }
 		}
 
 		/// <summary>
-		/// Simplifies traversing items in the content hierarchy.
+		///     Simplifies traversing items in the content hierarchy.
 		/// </summary>
 		public static TraverseHelper Traverse
 		{
-			get { return new TraverseHelper(Context.Current, Is, PathGetter); }
+			get { return new TraverseHelper(() => Context.Current, Is, PathGetter); }
 		}
 
 		/// <summary>
-		/// Simplifies access to APIs related to search and querying.
+		///     Simplifies access to APIs related to search and querying.
 		/// </summary>
 		public static SearchHelper Search
 		{
-			get { return new SearchHelper(Context.Current); }
+			get { return new SearchHelper(() => Context.Current); }
 		}
 
 		/// <summary>
-		/// Simplifies access to the current page
+		///     Simplifies access to the current page
 		/// </summary>
 		public static ContextHelper Current
 		{
-			get { return new ContextHelper(Context.Current, PathGetter); }
+			get { return new ContextHelper(() => Context.Current, PathGetter); }
 		}
 
-		private static System.Func<PathData> PathGetter
+		private static Func<PathData> PathGetter
 		{
 			get { return () => Context.Current.Resolve<IWebContext>().CurrentPath; }
 		}

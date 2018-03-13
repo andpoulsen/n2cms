@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Diagnostics;
 using N2.Configuration;
 using N2.Definitions;
@@ -8,42 +8,44 @@ using N2.Plugin;
 
 namespace N2.Web
 {
-	[Service]
-	public class MultipleSitesInitializer : IAutoStart
-	{
-		public MultipleSitesInitializer(IPersister persister, IHost host, ISitesProvider sitesProvider, ConnectionMonitor context, HostSection config, IDefinitionManager ignored)
-		{
-			Debug.WriteLine("MultipleSitesInitializer");
+    [Service]
+    public class MultipleSitesInitializer : IAutoStart
+    {
+        private readonly Engine.Logger<MultipleSitesInitializer> logger;
 
-			if (config.MultipleSites && config.DynamicSites)
-			{
-				context.Online += delegate
-				{
-					host.AddSites(sitesProvider.GetSites());
-					persister.ItemSaved += delegate(object sender, ItemEventArgs e)
-					{
-						if (e.AffectedItem is ISitesSource)
-						{
-							IList<Site> sites = Host.ExtractSites(config);
-							sites = Host.Union(sites, sitesProvider.GetSites());
+        public MultipleSitesInitializer(IPersister persister, IHost host, ISitesProvider sitesProvider, ConnectionMonitor context, HostSection config, IDefinitionManager ignored)
+        {
+            logger.Debug("MultipleSitesInitializer");
 
-							host.ReplaceSites(host.DefaultSite, sites);
-						}
-					};
-				};
-			}
-		}
+            if (config.MultipleSites && config.DynamicSites)
+            {
+                context.Online += delegate
+                {
+                    host.AddSites(sitesProvider.GetSites());
+                    persister.ItemSaved += delegate(object sender, ItemEventArgs e)
+                    {
+                        if (e.AffectedItem is ISitesSource)
+                        {
+                            IList<Site> sites = Host.ExtractSites(config);
+                            sites = Host.Union(sites, sitesProvider.GetSites());
 
-		#region IAutoStart Members
+                            host.ReplaceSites(host.DefaultSite, sites);
+                        }
+                    };
+                };
+            }
+        }
 
-		public void Start()
-		{
-		}
+        #region IAutoStart Members
 
-		public void Stop()
-		{
-		}
+        public void Start()
+        {
+        }
 
-		#endregion
-	}
+        public void Stop()
+        {
+        }
+
+        #endregion
+    }
 }

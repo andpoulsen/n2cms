@@ -17,327 +17,177 @@ using System.Linq;
 using N2.Definitions;
 using N2.Details;
 using N2.Engine;
-using N2.Persistence.Finder;
-using NHibernate.Criterion;
+using N2.Persistence.Sources;
 
-namespace N2.Persistence.NH
+namespace N2.Persistence
 {
-	/// <summary>
-	/// A wrapper for NHibernate persistence functionality.
-	/// </summary>
-	[Service(typeof(IPersister))]
-	public class ContentPersister : IPersister
-	{
-		private readonly IRepository<int, ContentItem> itemRepository;
-		private readonly INHRepository<int, ContentDetail> linkRepository;
-		private readonly IItemFinder finder;
+    /// <summary>
+    /// A wrapper for NHibernate persistence functionality.
+    /// TODO: Explain how this differs from ContentItemRepositories. 
+    /// </summary>
+    [Service(typeof(IPersister))]
+    public class ContentPersister : IPersister
+    {
+        private readonly IContentItemRepository repository;
+        private readonly ContentSource sources;
 
-		/// <summary>Creates a new instance of the DefaultPersistenceManager.</summary>
-		public ContentPersister(IRepository<int, ContentItem> itemRepository, INHRepository<int, ContentDetail> linkRepository,
-		                        IItemFinder finder)
-		{
-			this.itemRepository = itemRepository;
-			this.linkRepository = linkRepository;
-			this.finder = finder;
-		}
+        /// <summary>Creates a new instance of the DefaultPersistenceManager.</summary>
+        public ContentPersister(ContentSource sources, IContentItemRepository itemRepository)
+        {
+            this.sources = sources;
+            this.repository = itemRepository;
+        }
 
-		#region Load, Save, & Delete Methods
+        #region Load, Save, & Delete Methods
 
-		/// <summary>Gets an item by id</summary>
-		/// <param name="id">The id of the item to load</param>
-		/// <returns>The item if one with a matching id was found, otherwise null.</returns>
-		public virtual ContentItem Get(int id)
-		{
-            ContentItem item = itemRepository.Get(id);
+        /// <summary>Gets an item by id</summary>
+        /// <param name="id">The id of the item to load</param>
+        /// <returns>The item if one with a matching id was found, otherwise null.</returns>
+        public virtual ContentItem Get(int id)
+        {
+            ContentItem item = sources.Get(id);
             if (ItemLoaded != null)
             {
                 return Invoke(ItemLoaded, new ItemEventArgs(item)).AffectedItem; 
             }
             return item;
-		}
+        }
 
-		/// <summary>Gets an item by id</summary>
-		/// <typeparam name="T">The type of object that is expected</typeparam>
-		/// <param name="id">The id of the item to load</param>
-		/// <returns>The item if one with a matching id was found, otherwise null.</returns>
-		public virtual T Get<T>(int id) where T : ContentItem
-		{
+        /// <summary>Gets an item by id</summary>
+        /// <typeparam name="T">The type of object that is expected</typeparam>
+        /// <param name="id">The id of the item to load</param>
+        /// <returns>The item if one with a matching id was found, otherwise null.</returns>
+        public virtual T Get<T>(int id) where T : ContentItem
+        {
             return (T)Get(id);
-		}
+        }
 
-		/// <summary>Saves or updates an item storing it in database</summary>
-		/// <param name="unsavedItem">Item to save</param>
-		public virtual void Save(ContentItem unsavedItem)
-		{
-			Utility.InvokeEvent(ItemSaving, unsavedItem, this, SaveAction);
-		}
+        /// <summary>Saves or updates an item storing it in database</summary>
+        /// <param name="unsavedItem">Item to save</param>
+        public virtual void Save(ContentItem unsavedItem)
+        {
+            using (var tx = Repository.BeginTransaction())
+            {
+                tx.Committed += (s, a) => Invoke(ItemSaved, new ItemEventArgs(unsavedItem));
+                Utility.InvokeEvent(ItemSaving, unsavedItem, this, sources.Save, null);
+                tx.Commit();
+            }
+        }
 
-		private void SaveAction(ContentItem item)
-		{
-			if (item is IActiveContent)
-			{
-				(item as IActiveContent).Save();
-			}
-			else
-			{
-				using (ITransaction transaction = itemRepository.BeginTransaction())
-				{
-					if (item.VersionOf == null)
-						item.Updated = Utility.CurrentTime();
-					if (string.IsNullOrEmpty(item.Name))
-						item.Name = null;
+        /// <summary>Deletes an item an all sub-items</summary>
+        /// <param name="itemNoMore">The item to delete</param>
+        public void Delete(ContentItem itemNoMore)
+        {
+            Utility.InvokeEvent(ItemDeleting, itemNoMore, this, sources.Delete, ItemDeleted);
+        }
 
-					item.AddTo(item.Parent);
-					EnsureSortOrder(item);
+        #endregion
 
-					itemRepository.SaveOrUpdate(item);
-					if (string.IsNullOrEmpty(item.Name))
-					{
-						item.Name = item.ID.ToString();
-						itemRepository.Save(item);
-					}
+        #region Move & Copy Methods
 
-					transaction.Commit();
-				}
-			}
-			Invoke(ItemSaved, new ItemEventArgs(item));
-		}
+        /// <summary>Move an item to a destination</summary>
+        /// <param name="source">The item to move</param>
+        /// <param name="destination">The destination below which to place the item</param>
+        public virtual void Move(ContentItem source, ContentItem destination)
+        {
+            Utility.InvokeEvent(ItemMoving, this, source, destination, this.sources.Move, ItemMoved);
+        }
 
-		private void EnsureSortOrder(ContentItem unsavedItem)
-		{
-			var parent = unsavedItem.Parent;
-			if (parent != null)
-			{
-				foreach (SortChildrenAttribute attribute in parent.GetContentType().GetCustomAttributes(typeof(SortChildrenAttribute), true))
-				{
-					foreach (ContentItem updatedItem in attribute.ReorderChildren(parent))
-					{
-						itemRepository.SaveOrUpdate(updatedItem);
-					}
-				}
-			}
-		}
+        /// <summary>Copies an item and all sub-items to a destination</summary>
+        /// <param name="source">The item to copy</param>
+        /// <param name="destination">The destination below which to place the copied item</param>
+        /// <returns>The copied item</returns>
+        public virtual ContentItem Copy(ContentItem source, ContentItem destination)
+        {
+            return Utility.InvokeEvent(ItemCopying, this, source, destination, this.sources.Copy, ItemCopied);
+        }
 
-		/// <summary>Deletes an item an all sub-items</summary>
-		/// <param name="itemNoMore">The item to delete</param>
-		public void Delete(ContentItem itemNoMore)
-		{
-			Utility.InvokeEvent(ItemDeleting, itemNoMore, this, DeleteAction);
-		}
+        /// <summary>Copies an item and all sub-items to a destination</summary>
+        /// <param name="source">The item to copy</param>
+        /// <param name="destination">The destination below which to place the copied item</param>
+        /// <param name="includeChildren">Whether child items should be copied as well.</param>
+        /// <returns>The copied item</returns>
+        public virtual ContentItem Copy(ContentItem source, ContentItem destination, bool includeChildren)
+        {
+            if (includeChildren)
+                return Copy(source, destination);
+            else
+                return Copy(source.Clone(false), destination);
+        }
 
-		void DeleteAction(ContentItem itemNoMore)
-		{
-			if (itemNoMore is IActiveContent)
-			{
-				TraceInformation("ContentPersister.DeleteAction " + itemNoMore + " is IActiveContent");
-				(itemNoMore as IActiveContent).Delete();
-			}
-			else
-			{
-				using (ITransaction transaction = itemRepository.BeginTransaction())
-				{
-					DeleteReferencesRecursive(itemNoMore);
+        #endregion
 
-					DeleteRecursive(itemNoMore, itemNoMore);
+        #region IPersistenceEventSource
 
-					transaction.Commit();
-				}
-			}
-			Invoke(ItemDeleted, new ItemEventArgs(itemNoMore));
-		}
+        /// <summary>Occurs before an item is saved</summary>
+        public event EventHandler<CancellableItemEventArgs> ItemSaving;
 
-		private void DeleteReferencesRecursive(ContentItem itemNoMore)
-		{
-			string itemTrail = Utility.GetTrail(itemNoMore);
-			var inboundLinks = Find.EnumerateChildren(itemNoMore, true, false)
-				.SelectMany(i => linkRepository.FindAll(Expression.Eq("LinkedItem", i), Expression.Eq("ValueTypeKey", ContentDetail.TypeKeys.LinkType)))
-				.Where(l => !Utility.GetTrail(l.EnclosingItem).StartsWith(itemTrail))
-				.ToList();
+        /// <summary>Occurs when an item has been saved</summary>
+        public event EventHandler<ItemEventArgs> ItemSaved;
 
-			TraceInformation("ContentPersister.DeleteReferencesRecursive " + inboundLinks.Count + " of " + itemNoMore);
+        /// <summary>Occurs before an item is deleted</summary>
+        public event EventHandler<CancellableItemEventArgs> ItemDeleting;
 
-			foreach (ContentDetail link in inboundLinks)
-			{
-				linkRepository.Delete(link);
-				link.AddTo((DetailCollection)null);
-			}
-			linkRepository.Flush();
-		}
+        /// <summary>Occurs when an item has been deleted</summary>
+        public event EventHandler<ItemEventArgs> ItemDeleted;
 
-		#region Delete Helper Methods
+        /// <summary>Occurs before an item is moved</summary>
+        public event EventHandler<CancellableDestinationEventArgs> ItemMoving;
 
-		private void DeleteRecursive(ContentItem topItem, ContentItem itemToDelete)
-		{
-			DeletePreviousVersions(itemToDelete);
+        /// <summary>Occurs when an item has been moved</summary>
+        public event EventHandler<DestinationEventArgs> ItemMoved;
 
-			try
-			{
-				Trace.Indent();
-				List<ContentItem> children = new List<ContentItem>(itemToDelete.Children);
-				foreach (ContentItem child in children)
-					DeleteRecursive(topItem, child);
-			}
-			finally
-			{
-				Trace.Unindent();
-			}
+        /// <summary>Occurs before an item is copied</summary>
+        public event EventHandler<CancellableDestinationEventArgs> ItemCopying;
 
-			itemToDelete.AddTo(null);
+        /// <summary>Occurs when an item has been copied</summary>
+        public event EventHandler<DestinationEventArgs> ItemCopied;
 
-			TraceInformation("ContentPersister.DeleteRecursive " + itemToDelete);
-			itemRepository.Delete(itemToDelete);
-		}
+        /// <summary>Occurs when an item is loaded</summary>
+        public event EventHandler<ItemEventArgs> ItemLoaded;
 
-		private void DeletePreviousVersions(ContentItem itemNoMore)
-		{
-			var previousVersions = finder.Where.VersionOf.Eq(itemNoMore).Select();
-			if (previousVersions.Count == 0)
-				return;
+        #endregion
 
-			TraceInformation("ContentPersister.DeletePreviousVersions " + previousVersions.Count + " of " + itemNoMore);
+        #region IDisposable Members
 
-			foreach (ContentItem previousVersion in previousVersions)
-			{
-				itemRepository.Delete(previousVersion);
-			}
-		}
+        public void Dispose()
+        {
+            Repository.Dispose();
+        }
 
-		#endregion
-
-		#endregion
-
-		#region Move & Copy Methods
-
-		/// <summary>Move an item to a destination</summary>
-		/// <param name="source">The item to move</param>
-		/// <param name="destination">The destination below which to place the item</param>
-		public virtual void Move(ContentItem source, ContentItem destination)
-		{
-			Utility.InvokeEvent(ItemMoving, this, source, destination, MoveAction);
-		}
-
-		private ContentItem MoveAction(ContentItem source, ContentItem destination)
-		{
-			if (source is IActiveContent)
-			{
-				TraceInformation("ContentPersister.MoveAction " + source + " (is IActiveContent) to " + destination);
-				(source as IActiveContent).MoveTo(destination);
-			}
-			else
-			{
-				using (ITransaction transaction = itemRepository.BeginTransaction())
-				{
-					TraceInformation("ContentPersister.MoveAction " + source + " to " + destination);
-					source.AddTo(destination);
-					//source.AncestralTrail = null;
-					Save(source);
-					transaction.Commit();
-				}
-			}
-			Invoke(ItemMoved, new DestinationEventArgs(source, destination));
-			return null;
-		}
-
-		/// <summary>Copies an item and all sub-items to a destination</summary>
-		/// <param name="source">The item to copy</param>
-		/// <param name="destination">The destination below which to place the copied item</param>
-		/// <returns>The copied item</returns>
-		public virtual ContentItem Copy(ContentItem source, ContentItem destination)
-		{
-			return Copy(source, destination, true);
-		}
-
-		/// <summary>Copies an item and all sub-items to a destination</summary>
-		/// <param name="source">The item to copy</param>
-		/// <param name="destination">The destination below which to place the copied item</param>
-		/// <param name="includeChildren">Whether child items should be copied as well.</param>
-		/// <returns>The copied item</returns>
-		public virtual ContentItem Copy(ContentItem source, ContentItem destination, bool includeChildren)
-		{
-			return Utility.InvokeEvent(ItemCopying, this, source, destination, delegate(ContentItem copiedItem, ContentItem destinationItem)
-			{
-				if (copiedItem is IActiveContent)
-				{
-					TraceInformation("ContentPersister.Copy " + source + " (is IActiveContent) to " + destination);
-					return (copiedItem as IActiveContent).CopyTo(destinationItem);
-				}
-
-				TraceInformation("ContentPersister.Copy " + source + " to " + destination);
-				ContentItem cloned = copiedItem.Clone(includeChildren);
-				if(cloned.Name == source.ID.ToString())
-					cloned.Name = null;
-				cloned.Parent = destinationItem;
-
-				Save(cloned);
-
-				Invoke(ItemCopied, new DestinationEventArgs(cloned, destinationItem));
-
-				return cloned;
-			});
-		}
-
-		#endregion
-
-		#region IPersistenceEventSource
-
-		/// <summary>Occurs before an item is saved</summary>
-		public event EventHandler<CancellableItemEventArgs> ItemSaving;
-
-		/// <summary>Occurs when an item has been saved</summary>
-		public event EventHandler<ItemEventArgs> ItemSaved;
-
-		/// <summary>Occurs before an item is deleted</summary>
-		public event EventHandler<CancellableItemEventArgs> ItemDeleting;
-
-		/// <summary>Occurs when an item has been deleted</summary>
-		public event EventHandler<ItemEventArgs> ItemDeleted;
-
-		/// <summary>Occurs before an item is moved</summary>
-		public event EventHandler<CancellableDestinationEventArgs> ItemMoving;
-
-		/// <summary>Occurs when an item has been moved</summary>
-		public event EventHandler<DestinationEventArgs> ItemMoved;
-
-		/// <summary>Occurs before an item is copied</summary>
-		public event EventHandler<CancellableDestinationEventArgs> ItemCopying;
-
-		/// <summary>Occurs when an item has been copied</summary>
-		public event EventHandler<DestinationEventArgs> ItemCopied;
-
-		/// <summary>Occurs when an item is loaded</summary>
-		public event EventHandler<ItemEventArgs> ItemLoaded;
-
-		#endregion
-
-		#region IDisposable Members
-
-		public void Dispose()
-		{
-			itemRepository.Dispose();
-		}
-
-		#endregion
+        #endregion
 
         /// <summary>Persists changes.</summary>
         public void Flush()
         {
-            itemRepository.Flush();
+            Repository.Flush();
         }
-        public IRepository<int, ContentItem> Repository
+
+        public virtual IContentItemRepository Repository
         {
-            get { return this.itemRepository; }
+            get { return this.repository; }
         }
+
+        public virtual ContentSource Sources
+        {
+            get { return sources; }
+        } 
+
         protected virtual T Invoke<T>(EventHandler<T> handler, T args)
             where T : ItemEventArgs
         {
-            if (handler != null && args.AffectedItem.VersionOf == null)
+            if (handler != null && !args.AffectedItem.VersionOf.HasValue)
                 handler.Invoke(this, args);
             return args;
         }
 
-		private void TraceInformation(string logMessage)
-		{
-			Trace.TraceInformation(logMessage);
-		}
+        private void EnsureName(ContentItem item)
+        {
+            if (string.IsNullOrEmpty(item.Name))
+            {
+                item.Name = item.ID.ToString();
+                Repository.SaveOrUpdate(item);
+            }
+        }
     }
 }

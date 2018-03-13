@@ -1,27 +1,36 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text;
 
 namespace N2.Persistence.Search
 {
-	/// <summary>
-	/// Indexes content items to be searched.
-	/// </summary>
-	public interface IIndexer
-	{
-		/// <summary>Clears the index.</summary>
-		void Clear();
+    public class IndexStatistics
+    {
+        public int TotalDocuments { get; set; }
+    }
 
-		/// <summary>Optimizes the index.</summary>
-		void Optimize();
+    public interface IIndexer
+    {
+        /// <summary>Updates the indexing using the given document.</summary>
+        /// <param name="document"></param>
+        void Update(IndexableDocument document);
 
-		/// <summary>Delets an item from the index and any descendants.</summary>
-		/// <param name="itemID">The id of the item to delete.</param>
-		void Delete(int itemID);
+        /// <summary>Delets an item from the index and any descendants.</summary>
+        /// <param name="itemID">The id of the item to delete.</param>
+        void Delete(int itemID);
 
-		/// <summary>Updates the index with the given item.</summary>
-		/// <param name="item">The item containing content to be indexed.</param>
-		void Update(N2.ContentItem item);
+        /// <summary>Gets index statistics.</summary>
+        /// <returns>The current statistics on the index.</returns>
+        IndexStatistics GetStatistics();
 
-		/// <summary>Unlocks the index.</summary>
-		void Unlock();
-	}
+        /// <summary>Clears the index.</summary>
+        void Clear();
+
+        /// <summary>Optimizes the index.</summary>
+        void Optimize();
+
+        /// <summary>Unlocks the index.</summary>
+        void Unlock();
+    }
 }

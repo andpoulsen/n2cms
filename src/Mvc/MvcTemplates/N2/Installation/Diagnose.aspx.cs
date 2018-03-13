@@ -14,94 +14,90 @@ using System.Linq;
 using System.Reflection;
 using System.Web;
 using System.Web.UI;
-using System.Web.UI.WebControls;
 using N2.Definitions;
 using N2.Edit.Installation;
 using N2.Engine;
 using N2.Web;
 using N2.Management.Installation;
+using N2.Persistence;
 
 namespace N2.Edit.Install
 {
-	public partial class Diagnose : Page
-	{
-		protected IHost host;
-		protected string[] recentChanges = new string[0];
+    public partial class Diagnose : Page
+    {
+        protected IHost host;
+        protected string[] recentChanges = new string[0];
+        protected IEngine Engine;
 
-		protected override void OnInit(EventArgs e)
-		{
-			InstallationUtility.CheckInstallationAllowed(Context);
-			base.OnInit(e);
-		}
+        protected override void OnInit(EventArgs e)
+        {
+            Engine = N2.Context.Current;
+            InstallationUtility.CheckInstallationAllowed(Context);
+            Status = Engine.Resolve<InstallationManager>().GetStatus();
+            N2.Resources.Register.JQuery(this);
+            base.OnInit(e);
+        }
 
-		protected override void OnLoad(EventArgs e)
-		{
-			host = N2.Context.Current.Resolve<IHost>();
+        protected override void OnLoad(EventArgs e)
+        {
+            host = N2.Context.Current.Resolve<IHost>();
+			Header.DataBind();
+            base.OnLoad(e);
+        }
 
-			base.OnLoad(e);
-		}
+        protected override void OnPreRender(EventArgs e)
+        {
+            base.OnPreRender(e);
 
-		protected override void OnPreRender(EventArgs e)
-		{
-			base.OnPreRender(e);
+            ShowLastError();
 
-			ShowLastError();
+            try
+            {
+                CheckDatabase();
+            }
+            catch (Exception ex)
+            {
+                lblDbConnection.Text = formatException(ex);
+            }
 
-			try
-			{
-				CheckDatabase();
-			}
-			catch (Exception ex)
-			{
-				lblDbConnection.Text = formatException(ex);
-			}
+            try
+            {
+                lblRootNode.Text = CurrentInstallationManager.CheckRootItem();
+            }
+            catch (Exception ex)
+            {
+                lblRootNode.Text = formatException(ex);
+            }
 
-			try
-			{
-				lblRootNode.Text = CurrentInstallationManager.CheckRootItem();
-			}
-			catch (Exception ex)
-			{
-				lblRootNode.Text = formatException(ex);
-			}
+            try
+            {
+                lblStartNode.Text = CurrentInstallationManager.CheckStartPage();
+            }
+            catch (Exception ex)
+            {
+                lblStartNode.Text = formatException(ex);
+            }
 
-			try
-			{
-				lblStartNode.Text = CurrentInstallationManager.CheckStartPage();
-			}
-			catch (Exception ex)
-			{
-				lblStartNode.Text = formatException(ex);
-			}
+            try
+            {
+                //recentChanges = N2.Find.Items.All.MaxResults(5).OrderBy.Updated.Desc.Select().Select(i => i.SavedBy + ": #" + i.ID + " " + i.Title + " (" + i.Updated + ")").ToArray();
+				recentChanges = Engine.Resolve<IContentItemRepository>().Find(ParameterCollection.Empty.OrderBy("Updated DESC").Take(5)).Select(i => i.SavedBy + ": #" + i.ID + " " + i.Title + " (" + i.Updated + ")").ToArray();
+					//N2.Find.Items.All.MaxResults(5).OrderBy.Updated.Desc.Select().Select(i => i.SavedBy + ": #" + i.ID + " " + i.Title + " (" + i.Updated + ")").ToArray();
+            }
+            catch (Exception ex)
+            {
+                lblChanges.Text = formatException(ex);
+            }
 
-			try
-			{
-				recentChanges = N2.Find.Items.All.MaxResults(10).OrderBy.Updated.Desc.Select().Select(i => i.SavedBy + ": #" + i.ID + " " + i.Title + " (" + i.Updated + ")").ToArray();
-			}
-			catch (Exception ex)
-			{
-				lblChanges.Text = formatException(ex);
-			}
-
-			try
-			{
-				lblN2Version.Text = (new AssemblyName(Assembly.Load("N2").FullName)).Version.ToString();
-				lblEditVersion.Text = (new AssemblyName(Assembly.Load("N2.Management").FullName)).Version.ToString();
-			}
-			catch (Exception ex)
-			{
-				lblEditVersion.Text = formatException(ex);
-			}
-
-			try
-			{
-				rptDefinitions.DataSource = N2.Context.Definitions.GetDefinitions();
-				rptDefinitions.DataBind();
-			}
-			catch (Exception ex)
-			{
-				lblDefinitions.Text = formatException(ex);
-			}
+            try
+            {
+                rptDefinitions.DataSource = N2.Context.Definitions.GetDefinitions().SelectMany(d => N2.Context.Current.Resolve<ITemplateAggregator>().GetTemplates(d.ItemType).Select(t => t.Definition));
+                rptDefinitions.DataBind();
+            }
+            catch (Exception ex)
+            {
+                lblDefinitions.Text = formatException(ex);
+            }
 
             try
             {
@@ -112,156 +108,80 @@ namespace N2.Edit.Install
             {
                 lblAssemblies.Text = formatException(ex);
             }
-		}
 
-		private void ShowLastError()
-		{
-			try
-			{
-				Exception lastError = Server.GetLastError();
-				Server.ClearError();
-				if (lastError != null)
-					lblError.Text = formatException(lastError);
-				else
-					lblError.Text = "none";
-			}
-			catch (Exception ex)
-			{
-				lblError.Text = formatException(ex);
-			}
-		}
+			ScheduledActions = Engine.Resolve<N2.Plugin.Scheduling.Scheduler>().Actions;
+        }
 
-		private InstallationManager CurrentInstallationManager
-		{
-			get { return N2.Context.Current.Resolve<InstallationManager>(); }
-		}
+        private void ShowLastError()
+        {
+            try
+            {
+                Exception lastError = Server.GetLastError();
+                Server.ClearError();
+                if (lastError != null)
+                    lblError.Text = formatException(lastError);
+                else
+                    lblError.Text = "none";
+            }
+            catch (Exception ex)
+            {
+                lblError.Text = formatException(ex);
+            }
+        }
 
-		private void CheckDatabase()
-		{
-			lblDbConnection.Text = CurrentInstallationManager.CheckDatabase();
-		}
-		protected void btnRestart_Click(object sender, EventArgs e)
-		{
-			HttpRuntime.UnloadAppDomain();
-			Response.Redirect(Request.RawUrl);
-		}
-		protected void btnAddSchema_Click(object sender, EventArgs e)
-		{
-			try
-			{
-				CurrentInstallationManager.Install();
-				lblAddSchemaResult.Text = "OK, tables created";
-			}
-			catch (Exception ex)
-			{
-				lblAddSchemaResult.Text = formatException(ex);
-			}
-		}
+        private InstallationManager CurrentInstallationManager
+        {
+            get { return N2.Context.Current.Resolve<InstallationManager>(); }
+        }
 
-		protected void btnClearTables_Click(object sender, EventArgs e)
-		{
-			try
-			{
-				CurrentInstallationManager.DropDatabaseTables();
-				lblClearTablesResult.Text = "OK, tables removed";
-			}
-			catch (Exception ex)
-			{
-				lblClearTablesResult.Text = formatException(ex);
-			}
-		}
+        private void CheckDatabase()
+        {
+            lblDbConnection.Text = CurrentInstallationManager.CheckDatabase();
+        }
 
-		protected void btnInsert_Click(object sender, EventArgs e)
-		{
-			ddlTypes.Items.Clear();
-			ddlTypes.Items.Add("[select an item destinationType to insert]");
-			foreach (ItemDefinition d in N2.Context.Definitions.GetDefinitions())
-				ddlTypes.Items.Add(new ListItem(d.Title, d.ItemType.FullName));
-			ddlTypes.Visible = true;
-			btnInsertRootNode.Visible = true;
-		}
+        private string formatException(Exception ex)
+        {
+            return
+                string.Format("<textarea>{0}\n\n{1}</textarea>", ex.Message, ex.StackTrace);
+        }
 
-		protected void btnInsertRootNode_Click(object sender, EventArgs e)
-		{
-			try
-			{
-				ItemDefinition definition = GetSelectedRootNodeDefinition();
-				int itemID =
-					CurrentInstallationManager.InsertRootNode(definition.ItemType, "root", "Root node inserted by diagnostic page").ID;
+        /// <summary>
+        /// Finds the trust level of the running application (http://blogs.msdn.com/dmitryr/archive/2007/01/23/finding-out-the-current-trust-level-in-asp-net.aspx)
+        /// </summary>
+        /// <returns>The current trust level.</returns>
+        protected static AspNetHostingPermissionLevel GetTrustLevel()
+        {
+            foreach (AspNetHostingPermissionLevel trustLevel in new[] { AspNetHostingPermissionLevel.Unrestricted, AspNetHostingPermissionLevel.High, AspNetHostingPermissionLevel.Medium, AspNetHostingPermissionLevel.Low, AspNetHostingPermissionLevel.Minimal })
+            {
+                try
+                {
+                    new AspNetHostingPermission(trustLevel).Demand();
+                }
+                catch (System.Security.SecurityException)
+                {
+                    continue;
+                }
 
-				btnInsertRootNode.Visible = false;
-				ddlTypes.Visible = false;
+                return trustLevel;
+            }
 
+            return AspNetHostingPermissionLevel.None;
+        }
 
-				if (itemID == N2.Context.Current.Resolve<IHost>().DefaultSite.RootItemID)
-					lblInsert.Text = string.Format("Inserted root node with id {0} which matches root node in web.config. Great!", itemID);
-				else
-					lblInsert.Text = string.Format(
-							"Inserted root node with id {0}. You should update web.config &lt;appSettings&gt;&lt;add name=\"N2.SiteRoot\" value=\"<b>{0}</b>\" /&gt;&lt;/appSettings&gt;",
-							itemID);
-			}
-			catch (Exception ex)
-			{
-				lblInsert.Text = formatException(ex);
-			}
-		}
+        protected IList<ItemDefinition> AllowedChildren(object dataItem)
+        {
+            ItemDefinition d = dataItem as ItemDefinition;
 
-		private ItemDefinition GetSelectedRootNodeDefinition()
-		{
-			int i = 1;
-			foreach (ItemDefinition definition in N2.Context.Definitions.GetDefinitions())
-			{
-				if (i++ == ddlTypes.SelectedIndex)
-				{
-					return definition;
-				}
-			}
-			throw new N2Exception("Really bad, couldn't find the item type selected in the drop down list");
-		}
+            return d.GetAllowedChildren(N2.Context.Current.Definitions, Activator.CreateInstance(d.ItemType) as ContentItem).ToList();
+        }
 
-		protected void ddlTypes_SelectedIndexChanged(object sender, EventArgs e)
-		{
-		}
+        protected string GetDefinitions(Assembly a)
+        {
+            return string.Join(", ", N2.Context.Definitions.GetDefinitions().Where(d => d.ItemType.Assembly == a).Select(d => d.Title).ToArray());
+        }
 
-		private string formatException(Exception ex)
-		{
-			return
-				string.Format("<textarea>{0}\n\n{1}</textarea>", ex.Message, ex.StackTrace);
-		}
+        protected DatabaseStatus Status { get; set; }
 
-		/// <summary>
-		/// Finds the trust level of the running application (http://blogs.msdn.com/dmitryr/archive/2007/01/23/finding-out-the-current-trust-level-in-asp-net.aspx)
-		/// </summary>
-		/// <returns>The current trust level.</returns>
-		protected static AspNetHostingPermissionLevel GetTrustLevel()
-		{
-			foreach (AspNetHostingPermissionLevel trustLevel in new[] { AspNetHostingPermissionLevel.Unrestricted, AspNetHostingPermissionLevel.High, AspNetHostingPermissionLevel.Medium, AspNetHostingPermissionLevel.Low, AspNetHostingPermissionLevel.Minimal })
-			{
-				try
-				{
-					new AspNetHostingPermission(trustLevel).Demand();
-				}
-				catch (System.Security.SecurityException)
-				{
-					continue;
-				}
-
-				return trustLevel;
-			}
-
-			return AspNetHostingPermissionLevel.None;
-		}
-
-		protected IEnumerable<ItemDefinition> AllowedChildren(object dataItem)
-		{
-			ItemDefinition d = dataItem as ItemDefinition;
-
-			return d.GetAllowedChildren(N2.Context.Current.Definitions, Activator.CreateInstance(d.ItemType) as ContentItem);
-		}
-
-		protected string GetDefinitions(Assembly a)
-		{
-			return string.Join(", ", N2.Context.Definitions.GetDefinitions().Where(d => d.ItemType.Assembly == a).Select(d => d.Title).ToArray());
-		}
+		public IList<Plugin.Scheduling.ScheduledAction> ScheduledActions { get; set; }
 	}
 }

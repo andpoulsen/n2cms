@@ -4,9 +4,9 @@ var n2nav = new Object();
 n2nav.linkContainerId = null;
 n2nav.hostName = window.location.hostname;
 n2nav.toRelativeUrl = function(absoluteUrl) {
-    if(absoluteUrl.indexOf(n2nav.hostName)>0)
-        return absoluteUrl.replace(/.*?:\/\/.*?\//, "/");
-    return absoluteUrl;
+	if(absoluteUrl.indexOf(n2nav.hostName)>0)
+		return absoluteUrl.replace(/.*?:\/\/.*?\//, "/");
+	return absoluteUrl;
 }
 n2nav.onUrlSelected = null;
 n2nav.findLink = function(el) {
@@ -16,17 +16,17 @@ n2nav.findLink = function(el) {
 }
 
 n2nav.displaySelection = function(el){
-    $(".selected").removeClass("selected");
-    $(el).addClass("selected");
+	$(".selected").removeClass("selected");
+	$(el).addClass("selected");
 }
 
 n2nav.getPath = function(a) {
 	return $(a).attr("data-path");
 }
 n2nav.onTargetClick = function(el){
-    n2nav.displaySelection(el);
-    if(n2nav.onUrlSelected)
-    	n2nav.onUrlSelected(n2nav.getPath(el));
+	n2nav.displaySelection(el);
+	if(n2nav.onUrlSelected)
+		n2nav.onUrlSelected(n2nav.getPath(el));
 }
 
 n2nav.handlers = {
@@ -51,16 +51,16 @@ n2nav.update = function (options) {
 
 // EDIT
 var n2toggle = {
-    show: function(btn, bar) {
-        $(btn).addClass("toggled").blur();
-        $(bar).show();
-        $.cookie(bar, "show");
-    },
-    hide: function(btn, bar) {
-        $(btn).removeClass("toggled").blur();
-        $(bar).hide();
-        $.cookie(bar, null)
-    }
+	show: function(btn, bar) {
+		$(btn).addClass("toggled").blur();
+		$(bar).show();
+		$.cookie(bar, "show");
+	},
+	hide: function(btn, bar) {
+		$(btn).removeClass("toggled").blur();
+		$(bar).hide();
+		$.cookie(bar, null)
+	}
 };
 
 var initn2context = function (w) {
@@ -125,35 +125,41 @@ var initn2context = function (w) {
 
 		// selection memory
 		update: function (options) {
-			if (!this.hasTop()) return;
-
 			options.previewUrl = options.previewUrl || this.selectedUrl;
-			var memory = this.getMemory();
-			var action = this.getAction();
 			this.selectedPath = options.path;
 			this.selectedUrl = options.previewUrl;
 
-			if (typeof (toolbarPlugIns) == "undefined")
-				return;
-			for (var i = 0; i < toolbarPlugIns.length; i++) {
-				var a = w.document.getElementById(toolbarPlugIns[i].linkId);
-				var href = toolbarPlugIns[i].urlFormat;
-				var formats = { url: options.previewUrl, selected: options.path, memory: memory, action: action };
+			if (!this.hasTop()) return;
+
+			var memory = this.getMemory();
+			var action = this.getAction();
+
+			var formats = {
+				url: options.previewUrl,
+				selected: options.path,
+				memory: memory,
+				action: action 
+			};
+			$("a.templatedurl").each(function () {
+				var href = $(this).attr("data-url-template") || a.href;
 				for (var key in formats) {
 					var format = "{" + key + "}";
 					if (href.indexOf(format) >= 0 && formats[key] == "null") {
 						href = "#stop";
-						$(a).addClass("disabled");
+						$(this).addClass("disabled");
 						break;
 					}
-					else $(a).removeClass("disabled");
+					else $(this).removeClass("disabled");
 
 					href = href.replace(format, formats[key]);
 				}
-				a.href = href;
-			}
+				href = href.replace("{query}", href.indexOf('?') >= 0 ? "&" : "?");
+				this.href = href;
+			});
 
-			w.document.getElementById("permission").className = options.permission;
+			$(document).ready(function () {
+				w.document.getElementById("permission").className = options.permission;
+			});
 		},
 
 		append: function (url, data) {
@@ -208,25 +214,31 @@ var initn2context = function (w) {
 		},
 		unselectFrame: function (frame) {
 			jQuery(".selected a").filter(function () { return this.target === frame || !this.target; })
-                .closest(".selected")
-                .each(function () {
-                	n2.unselect(this.id);
-                });
+				.closest(".selected")
+				.each(function () {
+					n2.unselect(this.id);
+				});
 		},
 		unselect: function (name) {
 			if (!name) return;
 
 			jQuery("#" + name).removeClass("selected");
 			jQuery(document.body).removeClass(name + "Selected");
+		},
+		context: function (ctx) {
+			this.flags = ctx.Flags;
+		},
+		isFlagged: function (flag) {
+			return this.flags && this.flags[flag];
+		},
+		layout: {
+			init: function () {
+				$("#splitter-container,.pane").layout({ useStateCookie: true, cookie: { expires: 365 }, defaults: { spacing_closed: 12 }, north: { resizable: false }, west: { minWidth: 250 }, center: { minWidth: 250} });
+				$("#permission").css({ position: "" }); // restore north pane style so drop-downs arn't hidden
+			}
 		}
 	};
 
 	return w.n2ctx;
 };
-window.n2 = initn2context(window);
-
-window.n2.layout = {
-	init: function () {
-		$("#splitter-container,.pane").layout({ useStateCookie: true, cookie: { expires: 365 }, defaults: { spacing_closed: 12 }, north: { resizable: false }, west: { minWidth: 250 }, center: { minWidth: 250} });
-	}
-}
+window.n2 = $.extend(window.n2, initn2context(window));

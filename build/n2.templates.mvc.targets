@@ -10,9 +10,7 @@
 	</PropertyGroup>
 
 	<Target Name="Templates-Mvc-PrepareDependencies" DependsOnTargets="Framework-CreateItemGroups-BinFiles">
-		<Copy SourceFiles="$(SrcFolder)\Framework\Extensions\bin\$(Configuration)\N2.Extensions.dll;"
-					DestinationFolder="$(Templates-Mvc-SourceFolder)\bin" />
-		<Copy SourceFiles="@(Framework-BinFiles)" DestinationFolder="$(Templates-Mvc-SourceFolder)\bin" />
+
 	</Target>
 
 	<Target Name="Templates-Mvc-Build">
@@ -35,20 +33,20 @@
 												$(Templates-Mvc-SourceFolder)\**\*.Publish.xml;
 												$(Templates-Mvc-SourceFolder)\**\Thumbs.db;
 												$(Templates-Mvc-SourceFolder)\App_Data\SearchIndex\**\*;
+												$(Templates-Mvc-SourceFolder)\App_Data\Temp\**\*;
 												$(Templates-Mvc-SourceFolder)\N2\**\*;
 												$(Templates-Mvc-SourceFolder)\N2.Management.*" />
 		</ItemGroup>
 
-		<Copy SourceFiles="@(templatesMvcFiles)"						DestinationFolder="$(Templates-Mvc-DeployFolder-Path)\%(RecursiveDir)" />
-		<Copy SourceFiles="@(Framework-BinFiles)"						DestinationFolder="$(Templates-Mvc-DeployFolder-Path)\bin\" />
-		<Copy SourceFiles="@(Framework-EditFiles)"					DestinationFolder="$(Templates-Mvc-DeployFolder-Path)\N2\%(RecursiveDir)" />
-		<Copy SourceFiles="@(TextFiles)"										DestinationFolder="$(Templates-Mvc-DeployFolder)\" />
-		<Copy SourceFiles="@(Snippets)"											DestinationFolder="$(Templates-Mvc-DeployFolder)\Snippets" />
+		<Copy SourceFiles="@(templatesMvcFiles)" DestinationFolder="$(Templates-Mvc-DeployFolder-Path)\%(RecursiveDir)" />
+		<Copy SourceFiles="@(Framework-BinFiles)" DestinationFolder="$(Templates-Mvc-DeployFolder-Path)\bin\" />
+		<Copy SourceFiles="@(Framework-EditFiles)" DestinationFolder="$(Templates-Mvc-DeployFolder-Path)\N2\%(RecursiveDir)" />
+		<Copy SourceFiles="@(TextFiles)" DestinationFolder="$(Templates-Mvc-DeployFolder)\" />
+		<Copy SourceFiles="@(Snippets)" DestinationFolder="$(Templates-Mvc-DeployFolder)\Snippets" />
 		<CallTarget Targets="Templates-Mvc-RemoveProjectReferences" />
 	</Target>
 
-	<Target Name="Templates-Mvc-ZipDeploy" DependsOnTargets="Templates-Mvc-Deploy;Templates-Mvc-Zip">
-	</Target>
+	<Target Name="Templates-Mvc-ZipDeploy" DependsOnTargets="Templates-Mvc-Deploy;Templates-Mvc-Zip"></Target>
 
 	<Target Name="Templates-Mvc-PrepareZip">
 		<ItemGroup>

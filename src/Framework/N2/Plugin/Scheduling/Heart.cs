@@ -1,16 +1,18 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using System.Timers;
 using N2.Engine;
+using N2.Linq;
 
 namespace N2.Plugin.Scheduling
 {
     /// <summary>
     /// A wrapper for a timer that beats at a certain interval.
     /// </summary>
-	[Service(typeof(IHeart))]
+    [Service(typeof(IHeart))]
     public class Heart : IAutoStart, IHeart
     {
+        private readonly Engine.Logger<Heart> logger;
         Timer timer;
 
         public Heart()
@@ -24,20 +26,19 @@ namespace N2.Plugin.Scheduling
 
             timer = new Timer(config.Scheduler.Interval * 1000);
             timer.Elapsed += new ElapsedEventHandler(timer_Elapsed);
-			connection.Online += delegate { timer.Start(); };
-			connection.Interrupted += delegate { timer.Stop(); };
-			connection.Resumed += delegate { timer.Start(); };
+            connection.Online += delegate { timer.Start(); };
+            connection.Offline += delegate { timer.Stop(); };
         }
 
-		/// <summary>Occurs when a time unit has elapsed.</summary>
-		public event EventHandler Beat;
+        /// <summary>Occurs when a time unit has elapsed.</summary>
+        public event EventHandler Beat;
 
-		void timer_Elapsed(object sender, ElapsedEventArgs e)
-		{
-			Debug.WriteLine("Beat: " + DateTime.Now);
-			if (Beat != null)
-				Beat(this, e);
-		}
+        void timer_Elapsed(object sender, ElapsedEventArgs e)
+        {
+            logger.Debug("Beat: " + N2.Utility.CurrentTime());
+            if (Beat != null)
+                Beat(this, e);
+        }
 
         public void Start()
         {

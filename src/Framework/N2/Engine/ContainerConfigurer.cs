@@ -1,128 +1,133 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using N2.Configuration;
 using N2.Web;
+using N2.Edit;
+using N2.Persistence;
 
 namespace N2.Engine
 {
-	/// <summary>
-	/// Configures the inversion of control container with services used by N2 CMS.
-	/// </summary>
-	public class ContainerConfigurer
-	{
-		/// <summary>
-		/// Known configuration keys used to configure services.
-		/// </summary>
-		public static class ConfigurationKeys
-		{
-			/// <summary>Key used to configure services intended for medium trust.</summary>
-			public const string MediumTrust = "MediumTrust";
-			/// <summary>Key used to configure services intended for full trust.</summary>
-			public const string FullTrust = "FullTrust";
-		}
+    /// <summary>
+    /// Configures the inversion of control container with services used by N2 CMS.
+    /// </summary>
+    public class ContainerConfigurer
+    {
+        public virtual void Configure(IEngine engine, EventBroker broker, ConfigurationManagerWrapper configuration)
+        {
+            engine.Container.AddComponentInstance("n2.configuration", typeof(ConfigurationManagerWrapper), configuration);
+            engine.Container.AddComponentInstance("n2.engine", typeof(IEngine), engine);
+            engine.Container.AddComponentInstance("n2.container", typeof(IServiceContainer), engine.Container);
+            engine.Container.AddComponentInstance("n2.containerConfigurer", typeof(ContainerConfigurer), this);
 
-		public virtual void Configure(IEngine engine, EventBroker broker, ConfigurationManagerWrapper configuration)
-		{
-			configuration.Start();
-			engine.Container.AddComponentInstance("n2.configuration", typeof(ConfigurationManagerWrapper), configuration);
-			engine.Container.AddComponentInstance("n2.engine", typeof(IEngine), engine);
-			engine.Container.AddComponentInstance("n2.container", typeof(IServiceContainer), engine.Container);
-			engine.Container.AddComponentInstance("n2.containerConfigurer", typeof(ContainerConfigurer), this);
+            AddComponentInstance(engine.Container, configuration.GetConnectionStringsSection());
+            AddComponentInstance(engine.Container, configuration.Sections.Engine);
+            RegisterConfiguredComponents(engine.Container, configuration.Sections.Engine);
+            AddComponentInstance(engine.Container, configuration.Sections.Web);
+            InitializeEnvironment(engine.Container, configuration.Sections);
+            AddComponentInstance(engine.Container, configuration.Sections.Database);
+            AddComponentInstance(engine.Container, configuration.Sections.Management);
 
-			AddComponentInstance(engine.Container, configuration.GetConnectionStringsSection());
-			AddComponentInstance(engine.Container, configuration.Sections.Engine);
-			if (configuration.Sections.Engine != null)
-				RegisterConfiguredComponents(engine.Container, configuration.Sections.Engine);
-			AddComponentInstance(engine.Container, configuration.Sections.Web);
-			if (configuration.Sections.Web != null)
-				InitializeEnvironment(engine.Container, configuration.Sections.Web);
-			AddComponentInstance(engine.Container, configuration.Sections.Database);
-			AddComponentInstance(engine.Container, configuration.Sections.Management);
+            AddComponentInstance(engine.Container, broker);
 
-			AddComponentInstance(engine.Container, broker);
+            var skipTypes = configuration.Sections.Engine.Components.GetConfiguredServiceTypes();
+	        var skipList = skipTypes as Type[] ?? skipTypes.ToArray(); // eagerly evaluate the collection for slightly better perf...
+	        AddComponentUnlessConfigured(engine.Container, typeof(BasicTemporaryFileHelper), typeof(BasicTemporaryFileHelper), skipList);
+            AddComponentUnlessConfigured(engine.Container, typeof(TypeCache), typeof(TypeCache), skipList);
+            AddComponentUnlessConfigured(engine.Container, typeof(ITypeFinder), typeof(WebAppTypeFinder), skipList);
+            AddComponentUnlessConfigured(engine.Container, typeof(ServiceRegistrator), typeof(ServiceRegistrator), skipList);
 
-			engine.Container.AddComponent("n2.typeFinder", typeof(ITypeFinder), typeof(WebAppTypeFinder));
-			engine.Container.AddComponent("n2.webContext", typeof(N2.Web.IWebContext), typeof(N2.Web.AdaptiveContext));
-			engine.Container.AddComponent("n2.serviceRegistrator", typeof(ServiceRegistrator), typeof(ServiceRegistrator));
+            var registrator = engine.Container.Resolve<ServiceRegistrator>();
+            var services = registrator.FindServices();
+            var configurationKeys = configuration.GetComponentConfigurationKeys();
+            services = registrator.FilterServices(services, configurationKeys);
+            services = registrator.FilterServices(services, skipList);
+            registrator.RegisterServices(services);
 
-			var registrator = engine.Container.Resolve<ServiceRegistrator>();
-			var services = registrator.FindServices();
-			var configurations = GetComponentConfigurations(configuration);
-			services = registrator.FilterServices(services, configurations);
-			registrator.RegisterServices(services);
-		}
+            InitializeUrlParser(engine.Container);
+        }
 
-		protected virtual string[] GetComponentConfigurations(ConfigurationManagerWrapper configuration)
-		{
-			List<string> configurations = new List<string>();
-			string trustConfiguration = (Utility.GetTrustLevel() > System.Web.AspNetHostingPermissionLevel.Medium)
-				? ConfigurationKeys.FullTrust
-				: ConfigurationKeys.MediumTrust;
-			configurations.Add(trustConfiguration);
-			var configured = configuration.Sections.Engine.ComponentConfigurations;
-			configurations.AddRange(configured.AddedElements.Select(e => e.Name));
-			configurations.RemoveAll(c => configured.RemovedElements.Any(e => c == e.Name));
-			return configurations.ToArray();
-		}
+        private void AddComponentUnlessConfigured(IServiceContainer container, Type serviceType, Type instanceType, IEnumerable<Type> skipList)
+        {
+            if (skipList.Contains(serviceType))
+                return;
 
-		private void AddComponentInstance(IServiceContainer container, object instance)
-		{
-			container.AddComponentInstance(instance.GetType().FullName, instance.GetType(), instance);
-		}
+            container.AddComponent(serviceType.FullName + "->" + instanceType.FullName, serviceType, instanceType);
+        }
 
-		protected virtual void InitializeEnvironment(IServiceContainer container, HostSection hostConfig)
-		{
-			if (hostConfig != null)
-			{
-				Url.DefaultExtension = hostConfig.Web.Extension;
-				PathData.PageQueryKey = hostConfig.Web.PageQueryKey;
-				PathData.ItemQueryKey = hostConfig.Web.ItemQueryKey;
-				PathData.PartQueryKey = hostConfig.Web.PartQueryKey;
+        private void AddComponentInstance(IServiceContainer container, object instance)
+        {
+            container.AddComponentInstance(instance.GetType().FullName, instance.GetType(), instance);
+        }
 
-				if (!hostConfig.Web.IsWeb)
-					container.AddComponentInstance("n2.webContext.notWeb", typeof(IWebContext), new ThreadContext());
+        protected virtual void InitializeEnvironment(IServiceContainer container, ConfigurationManagerWrapper.ContentSectionTable config)
+        {
+            if (config.Web != null)
+            {
+                Url.DefaultExtension = config.Web.Web.Extension;
+                PathData.PageQueryKey = config.Web.Web.PageQueryKey;
+                PathData.ItemQueryKey = config.Web.Web.ItemQueryKey;
+                PathData.PartQueryKey = config.Web.Web.PartQueryKey;
+                PathData.PathKey = config.Web.Web.PathDataKey;
 
-				if (hostConfig.Web.Urls.EnableCaching)
-					container.AddComponent("n2.web.cachingUrlParser", typeof(IUrlParser), typeof(CachingUrlParserDecorator));
+                var skipList = config.Engine.Components.GetConfiguredServiceTypes();
+                if (config.Web.Web.IsWeb)
+                    AddComponentUnlessConfigured(container, typeof(IWebContext), typeof(AdaptiveContext), skipList);
+                else
+                    AddComponentUnlessConfigured(container, typeof(IWebContext), typeof(ThreadContext), skipList);
+            }
+            if (config.Management != null)
+            {
+                SelectionUtility.SelectedQueryKey = config.Management.Paths.SelectedQueryKey;
+                Url.SetToken("{Selection.SelectedQueryKey}", SelectionUtility.SelectedQueryKey);
+            }
+        }
 
-				if (hostConfig.MultipleSites)
-					container.AddComponent("n2.multipleSitesParser", typeof(IUrlParser), typeof(MultipleSitesParser));
-				else
-					container.AddComponent("n2.urlParser", typeof(IUrlParser), typeof(UrlParser));
-			}
-		}
+        private void InitializeUrlParser(IServiceContainer container)
+        {
+            var config = container.Resolve<HostSection>();
+            IUrlParser parser;
+            if (config.MultipleSites)
+                parser = new MultipleSitesParser(container.Resolve<IPersister>(), container.Resolve<IWebContext>(), container.Resolve<IHost>(), container.Resolve<Plugin.ConnectionMonitor>(), config);
+            else
+                parser = new UrlParser(container.Resolve<IPersister>(), container.Resolve<IWebContext>(), container.Resolve<IHost>(), container.Resolve<Plugin.ConnectionMonitor>(), config);
 
-		protected virtual void RegisterConfiguredComponents(IServiceContainer container, EngineSection engineConfig)
-		{
-			foreach (ComponentElement component in engineConfig.Components)
-			{
-				Type implementation = Type.GetType(component.Implementation);
-				Type service = Type.GetType(component.Service);
+            if (config.Web.Urls.EnableCaching)
+                parser = new CachingUrlParserDecorator(parser, container.Resolve<IPersister>(), container.Resolve<IWebContext>(), container.Resolve<CacheWrapper>(), new HostSection());
 
-				if (implementation == null)
-					throw new ComponentRegistrationException(component.Implementation);
+            container.AddComponentInstance("n2.urlParser", typeof(IUrlParser), parser);
+        }
 
-				if (service == null && !String.IsNullOrEmpty(component.Service))
-					throw new ComponentRegistrationException(component.Service);
+        protected virtual void RegisterConfiguredComponents(IServiceContainer container, EngineSection engineConfig)
+        {
+            foreach (ComponentElement component in engineConfig.Components)
+            {
+                Type implementation = Type.GetType(component.Implementation);
+                Type service = Type.GetType(component.Service);
 
-				if (service == null)
-					service = implementation;
+                if (implementation == null)
+                    throw new ComponentRegistrationException(component.Implementation);
 
-				string name = component.Key;
-				if (string.IsNullOrEmpty(name))
-					name = implementation.FullName;
+                if (service == null && !String.IsNullOrEmpty(component.Service))
+                    throw new ComponentRegistrationException(component.Service);
 
-				if (component.Parameters.Count == 0)
-				{
-					container.AddComponent(name, service, implementation);
-				}
-				else
-				{
-					container.AddComponentWithParameters(name, service, implementation,
-														 component.Parameters.ToDictionary());
-				}
-			}
-		}
-	}
+                if (service == null)
+                    service = implementation;
+
+                string name = component.Key;
+                if (string.IsNullOrEmpty(name))
+                    name = implementation.FullName;
+
+                if (component.Parameters.Count == 0)
+                {
+                    container.AddComponent(name, service, implementation);
+                }
+                else
+                {
+                    container.AddComponentWithParameters(name, service, implementation,
+                                                         component.Parameters.ToDictionary());
+                }
+            }
+        }
+    }
 }

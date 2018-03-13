@@ -5,19 +5,34 @@ using N2.Integrity;
 using N2.Templates.Services;
 using N2.Web;
 using N2.Definitions;
+using N2.Engine;
+using N2.Edit;
+using N2.Persistence;
+using System.Linq;
 
 namespace N2.Templates.Items
 {
+
+    [Adapts(typeof(RssFeed))]
+    public class RssFeedNodeAdapter : NodeAdapter
+    {
+        public override string GetPreviewUrl(ContentItem item, bool allowDraft)
+        {
+            return item.FindPath(PathData.DefaultAction).GetRewrittenUrl();
+        }
+    }
+
     [PageDefinition("Feed", 
-		Description = "An RSS feed that outputs an xml with the latest feeds.",
-		SortOrder = 260,
-		IconUrl = "~/Templates/UI/Img/feed.png")]
+        Description = "An RSS feed that outputs an xml with the latest feeds.",
+        SortOrder = 260,
+        IconUrl = "~/Templates/UI/Img/feed.png")]
     [RestrictParents(typeof (IStructuralPage))]
     [WithEditableTitle("Title", 10),
      WithEditableName("Name", 20)]
-	[ConventionTemplate("Feed")]
-    public class RssFeed : AbstractContentPage, IFeed, INode
+    [ConventionTemplate("Feed")]
+    public class RssFeed : AbstractContentPage, IFeed, Engine.IInjectable<IRepository<ContentItem>>
     {
+        private IRepository<ContentItem> repository;
         [EditableLink("Feed root", 90)]
         public virtual ContentItem FeedRoot
         {
@@ -25,7 +40,7 @@ namespace N2.Templates.Items
             set { SetDetail("FeedRoot", value); }
         }
 
-		[EditableNumber("Number of items", 100)]
+        [EditableNumber("Number of items", 100)]
         public virtual int NumberOfItems
         {
             get { return (int) (GetDetail("NumberOfItems") ?? 10); }
@@ -58,36 +73,23 @@ namespace N2.Templates.Items
             get { return base.Url + "?hungry=yes"; }
         }
 
-        public string PreviewUrl
-        {
-			get { return base.FindPath(PathData.DefaultAction).RewrittenUrl; }
-        }
-
         public virtual IEnumerable<ISyndicatable> GetItems()
         {
-			var query = N2.Find.Items
-                .Where.Detail(SyndicatableDefinitionAppender.SyndicatableDetailName).Eq(true);
-			if (FeedRoot != null)
-				query = query.And.AncestralTrail.Like(Utility.GetTrail(FeedRoot) + "%");
-
-			foreach (ISyndicatable item in query
-				.Filters(new TypeFilter(typeof(ISyndicatable)), new AccessFilter())
-                .MaxResults(NumberOfItems)
-                .OrderBy.Published.Desc
-                .Select())
+            ParameterCollection query = Parameter.Equal(SyndicatableDefinitionAppender.SyndicatableDetailName, true).Detail();
+            if (FeedRoot != null)
+                query &= Parameter.Below(FeedRoot);
+            
+            foreach (ISyndicatable item in repository.Find(query.Take(NumberOfItems).OrderBy("Published DESC"))
+                .Where(new TypeFilter(typeof(ISyndicatable)) & new AccessFilter())
+                .OfType<ISyndicatable>())
             {
                 yield return item;
             }
         }
 
-        private ItemFilter[] GetFilters()
+        public void Set(IRepository<ContentItem> dependency)
         {
-            ItemFilter[] filters;
-            if(FeedRoot != null)
-                filters = new ItemFilter[] { new TypeFilter(typeof(ISyndicatable)), new AccessFilter(), new AncestorFilter(FeedRoot) };
-            else
-                filters = new ItemFilter[] {  };
-            return filters;
+            repository = dependency;
         }
     }
 }

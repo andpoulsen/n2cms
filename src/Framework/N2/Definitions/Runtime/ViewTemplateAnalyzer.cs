@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -17,9 +17,12 @@ namespace N2.Definitions.Runtime
 	[Service]
 	public class ViewTemplateAnalyzer
 	{
+		// ReSharper disable FieldCanBeMadeReadOnly.Local
+		private Logger<ViewTemplateAnalyzer> logger;
 		IProvider<ViewEngineCollection> viewEnginesProvider;
 		DefinitionMap map;
 		DefinitionBuilder builder;
+		// ReSharper restore FieldCanBeMadeReadOnly.Local
 
 		public ViewTemplateAnalyzer(IProvider<ViewEngineCollection> viewEnginesProvider, DefinitionMap map, DefinitionBuilder builder)
 		{
@@ -28,32 +31,57 @@ namespace N2.Definitions.Runtime
 			this.builder = builder;
 		}
 
-		public virtual IEnumerable<ViewTemplateDescription> AnalyzeViews(VirtualPathProvider vpp, HttpContextBase httpContext, IEnumerable<ViewTemplateSource> sources)
+		public virtual IEnumerable<ContentRegistration> AnalyzeViews(VirtualPathProvider vpp, HttpContextBase httpContext, IEnumerable<ViewTemplateSource> sources)
 		{
+			var registrations = new List<ContentRegistration>();
 			foreach (var source in sources)
 			{
-				string virtualDir = Url.ResolveTokens(Url.ThemesUrlToken) + "Default/Views/" + source.ControllerName;
-				if (!vpp.DirectoryExists(virtualDir))
+				var virtualDirList = new List<string>
 				{
-					virtualDir = "~/Views/" + source.ControllerName;
-					if (!vpp.DirectoryExists(virtualDir))
-						continue;
-				}
+					Url.ResolveTokens(Url.ThemesUrlToken) + "Default/Views/" + source.ControllerName,
+					"~/Views/" + source.ControllerName
+				};
 
-				List<ViewTemplateDescription> descriptions = new List<ViewTemplateDescription>();
-				foreach (var file in vpp.GetDirectory(virtualDir).Files.OfType<VirtualFile>().Where(f => f.Name.EndsWith(source.ViewFileExtension)))
+				virtualDirList.AddRange(
+					from virtualDirectory in vpp.GetDirectory("~/Areas/").Directories.Cast<VirtualDirectory>()
+					let virtualPath = String.Format("~/Areas/{0}/Views/{1}", virtualDirectory.Name, source.ControllerName)
+					select virtualPath);
+
+				foreach (var virtualDir in virtualDirList.Where(vpp.DirectoryExists))
 				{
-					var description = AnalyzeView(httpContext, file, source.ControllerName, source.ModelType);
-					if (description != null)
-						descriptions.Add(description);
-				}
+					logger.Debug(String.Format("Analyzing directory {0}", virtualDir));
+					foreach (var file in vpp.GetDirectory(virtualDir).Files.OfType<VirtualFile>())
+					{
+						Debug.Assert(file.Name != null, "file.Name != null");
+						if (!file.Name.EndsWith(source.ViewFileExtension) || file.Name.StartsWith("_"))
+						{
+							logger.Info(String.Format("Skipping file {0}", file.VirtualPath));
+							continue;
+						}
+						logger.Debug(String.Format("Analyzing file {0}", file.VirtualPath));
 
-				foreach (var description in descriptions)
-					yield return description;
+						if (httpContext.IsDebuggingEnabled)
+						{
+							AnalyzeView(httpContext, file, source.ControllerName, source.ModelType, registrations);
+						}
+						else
+						{
+							try
+							{
+								AnalyzeView(httpContext, file, source.ControllerName, source.ModelType, registrations);
+							}
+							catch (Exception ex)
+							{
+								logger.Error(ex);
+							}
+						}
+					}
+				}
 			}
+			return registrations;
 		}
 
-		private ViewTemplateDescription AnalyzeView(HttpContextBase httpContext, VirtualFile file, string controllerName, Type modelType)
+		private ContentRegistration AnalyzeView(HttpContextBase httpContext, VirtualFile file, string controllerName, Type modelType, List<ContentRegistration> registrations)
 		{
 			if (modelType == null || !typeof(ContentItem).IsAssignableFrom(modelType) || modelType.IsAbstract)
 				return null;
@@ -61,8 +89,8 @@ namespace N2.Definitions.Runtime
 			var model = Activator.CreateInstance(modelType) as ContentItem;
 
 			var rd = new RouteData();
-			bool isPage = model.IsPage;
-			RouteExtensions.ApplyCurrentItem(rd, controllerName, Path.GetFileNameWithoutExtension(file.Name), isPage ? model : new StubItem(), isPage ? null : model);
+			var isPage = model != null && model.IsPage;
+			RouteExtensions.ApplyCurrentPath(rd, controllerName, Path.GetFileNameWithoutExtension(file.Name), new PathData(isPage ? model : new StubItem(), isPage ? null : model));
 
 			var cctx = new ControllerContext(httpContext, rd, new StubController());
 
@@ -71,19 +99,22 @@ namespace N2.Definitions.Runtime
 				: viewEnginesProvider.Get().FindPartialView(cctx, file.VirtualPath);
 
 
-			if (result.View == null)
-				return null;
-
-			return RenderViewForRegistration(file, modelType, cctx, result);
+			return result.View == null ? null : RenderViewForRegistration(file, modelType, cctx, result, registrations);
 		}
 
-		private ViewTemplateDescription RenderViewForRegistration(VirtualFile file, Type modelType, ControllerContext cctx, ViewEngineResult result)
+		// ReSharper disable RedundantNameQualifier
+		private ContentRegistration RenderViewForRegistration(VirtualFileBase file, Type modelType, ControllerContext cctx, ViewEngineResult result, List<ContentRegistration> registrations)
 		{
-			var re = new ContentRegistration();
-			re.ContentType = modelType;
-			re.TemplateKey = N2.Web.Url.RemoveAnyExtension(file.Name);
-			re.IsDefined = false;
-			using (StringWriter sw = new StringWriter())
+			if (file == null)
+				throw new ArgumentNullException("file");
+
+			// ReSharper disable once UseObjectOrCollectionInitializer
+			var fileName = N2.Web.Url.RemoveAnyExtension(file.Name);
+            var re = registrations.FirstOrDefault(cr => cr.Definition.ItemType == modelType && cr.Definition.TemplateKey == fileName)
+				?? new ContentRegistration(map.CreateDefinition(modelType, fileName)) { IsDefined = false };
+			re.Context.TouchedPaths.Add(file.VirtualPath);
+
+			using (var sw = new StringWriter())
 			{
 				var vdd = new ViewDataDictionary();
 				cctx.Controller.ViewData = vdd;
@@ -91,13 +122,18 @@ namespace N2.Definitions.Runtime
 
 				try
 				{
+					logger.DebugFormat("Rendering view {0} for registrations", file.VirtualPath);
 					result.View.Render(new ViewContext(cctx, result.View, vdd, new TempDataDictionary(), sw), sw);
+					logger.DebugFormat("Rendered view {0}, editables = {1}, defined = {2}", file.VirtualPath, re.Definition.Editables.Count, re.IsDefined);
+
+					if (!registrations.Contains(re))
+						registrations.Add(re);
 				}
 				catch (Exception ex)
 				{
-					Trace.WriteLine(ex);
+					logger.Error(file.VirtualPath, ex);
 					if (re.IsDefined)
-						throw;
+						throw new Exception(String.Format("Failed to render view {0} for registrations", file.VirtualPath), ex);
 					return null;
 				}
 				finally
@@ -105,24 +141,10 @@ namespace N2.Definitions.Runtime
 					N2.Web.Mvc.Html.RegistrationExtensions.SetRegistrationExpression(cctx.HttpContext, null);
 				}
 
-				if (re.IsDefined)
-				{
-					return new ViewTemplateDescription
-					{
-						Registration = re,
-						Definition = GetOrCreateDefinition(re),
-						TouchedPaths = new[] { file.VirtualPath }.Union(re.TouchedPaths)
-					};
-				}
-				return null;
+				return re.IsDefined ? re : null;
 			}
 		}
-
-		private ItemDefinition GetOrCreateDefinition(ContentRegistration re)
-		{
-			var definition = map.CreateDefinition(re.ContentType, re.TemplateKey);
-			return definition;
-		}
+		// ReSharper restore RedundantNameQualifier
 
 		class StubController : Controller
 		{

@@ -1,4 +1,4 @@
-﻿using System.Configuration;
+using System.Configuration;
 
 namespace N2.Configuration
 {
@@ -6,7 +6,7 @@ namespace N2.Configuration
 	/// Section configuring host settings such as root, and start node ids and 
 	/// multiple sites.
 	/// </summary>
-	public class HostSection : ConfigurationSectionBase
+	public class HostSection : ContentConfigurationSectionBase
 	{
 		[ConfigurationProperty("rootID", DefaultValue = 1)]
 		public int RootID
@@ -60,6 +60,13 @@ namespace N2.Configuration
 			set { base["web"] = value; }
 		}
 
+		[ConfigurationProperty("targeting")]
+		public TargetingCollection Targeting
+		{
+			get { return (TargetingCollection)base["targeting"]; }
+			set { base["targeting"] = value; }
+		}
+
 		/// <summary>Configures output cache for the templates.</summary>
 		[ConfigurationProperty("outputCache")]
 		public OutputCacheElement OutputCache
@@ -76,6 +83,14 @@ namespace N2.Configuration
 			set { base["resources"] = value; }
 		}
 
+		/// <summary>Web resource related config options for the preview frame.</summary>
+		[ConfigurationProperty("previewResources")]
+		public ResourcesElement PreviewResources
+		{
+			get { return (ResourcesElement)base["previewResources"]; }
+			set { base["previewResources"] = value; }
+		}
+
 		/// <summary>Virtual path provider related config options.</summary>
 		[ConfigurationProperty("vpp")]
 		public VppElement Vpp
@@ -83,5 +98,27 @@ namespace N2.Configuration
 			get { return (VppElement)base["vpp"]; }
 			set { base["vpp"] = value; }
 		}
+
+		[ConfigurationProperty("tokens")]
+		public TokensElement Tokens
+		{
+			get { return (TokensElement)base["tokens"]; }
+			set { base["tokens"] = value; }
+		}
+
+		[ConfigurationProperty("messaging")]
+		public MessagingElement Messaging
+		{
+			get { return (MessagingElement)base["messaging"]; }
+			set { base["messaging"] = value; }
+		}
+
+		[ConfigurationProperty("htmlSanitize")]
+		public HtmlSanitizeElement HtmlSanitize
+		{
+			get { return (HtmlSanitizeElement)base["htmlSanitize"]; }
+			set { base["htmlSanitize"] = value; }
+		}
+
 	}
 }

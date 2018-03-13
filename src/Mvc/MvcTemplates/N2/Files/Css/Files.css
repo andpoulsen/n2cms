@@ -1,0 +1,10 @@
+﻿.resize { position: relative; }
+.resize span { color: #000; }
+
+.files td.size { padding-left:10px; font-weight:bold; text-align:right; }
+.files td.preview > * { display:block; height:32px; width:32px; overflow:hidden; vertical-align:middle; text-align:center; overflow:hidden; }
+.files td.error { color:Red; }
+
+#fileupload.uploading {
+	opacity:1;
+}

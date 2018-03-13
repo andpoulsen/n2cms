@@ -8,352 +8,368 @@ using N2.Plugin;
 
 namespace N2.Engine.MediumTrust
 {
-	public class MediumTrustServiceContainer : ServiceContainerBase
-	{
-		bool isInitialized = false;
+    public class MediumTrustServiceContainer : ServiceContainerBase
+    {
+        bool isInitialized = false;
 
-		private readonly IDictionary<Type, Type> waitingList = new Dictionary<Type, Type>();
-		private readonly IDictionary<Type, object> container = new Dictionary<Type, object>();
-		private readonly IDictionary<Type, Func<Type, object>> resolvers = new Dictionary<Type, Func<Type, object>>();
-		private readonly IDictionary<Type, Func<Type, IEnumerable<object>>> listResolvers = new Dictionary<Type, Func<Type, IEnumerable<object>>>();
+        private readonly Engine.Logger<MediumTrustServiceContainer> logger;
+        private readonly IDictionary<Type, Type> waitingList = new Dictionary<Type, Type>();
+        private readonly IDictionary<Type, object> container = new Dictionary<Type, object>();
+        private readonly IDictionary<Type, Func<Type, object>> resolvers = new Dictionary<Type, Func<Type, object>>();
+        private readonly IDictionary<Type, Func<Type, IEnumerable<object>>> listResolvers = new Dictionary<Type, Func<Type, IEnumerable<object>>>();
 
-		public override void AddComponentLifeStyle(string key, Type serviceType, ComponentLifeStyle lifeStyle)
-		{
-			switch (lifeStyle)
-			{
-				case ComponentLifeStyle.Transient:
-					RegisterTransientResolver(key, serviceType, serviceType);
-					break;
-				default:
-					RegisterSingletonResolver(key, serviceType, serviceType);
-					CheckForAutoStart(key, serviceType, serviceType);
-					break;
-			}
-		}
+        public override void AddComponentLifeStyle(string key, Type serviceType, ComponentLifeStyle lifeStyle)
+        {
+            switch (lifeStyle)
+            {
+                case ComponentLifeStyle.Transient:
+                    RegisterTransientResolver(key, serviceType, serviceType);
+                    break;
+                default:
+                    RegisterSingletonResolver(key, serviceType, serviceType);
+                    CheckForAutoStart(key, serviceType, serviceType);
+                    break;
+            }
+        }
 
-		public override void AddComponentWithParameters(string key, Type serviceType, Type classType,
-		                                                IDictionary<string, string> properties)
-		{
-			throw new NotImplementedException();
-		}
+        public override void AddComponentWithParameters(string key, Type serviceType, Type classType,
+                                                        IDictionary<string, string> properties)
+        {
+            throw new NotImplementedException();
+        }
 
-		public override void AddComponentInstance(string key, Type serviceType, object instance)
-		{
-			if (resolvers.ContainsKey(serviceType))
-				return;
+        public override void AddComponentInstance(string key, Type serviceType, object instance)
+        {
+            if (resolvers.ContainsKey(serviceType))
+                return;
 
-			container[serviceType] = instance;
-			resolvers[serviceType] = ReturnContainerInstance;
+            container[serviceType] = instance;
+            resolvers[serviceType] = ReturnContainerInstance;
 
-			if (instance is IAutoStart)
-			{
-				Trace.WriteLine("Starting " + instance);
-				(instance as IAutoStart).Start();
-			}
-		}
+            if (instance is IAutoStart)
+            {
+                logger.Info("Starting " + instance);
+                (instance as IAutoStart).Start();
+            }
+        }
 
-		public override void AddComponent(string key, Type serviceType, Type classType)
-		{
-			RegisterSingletonResolver(key, serviceType, classType);
-			CheckForAutoStart(key, serviceType, classType);
-		}
+        public override void AddComponent(string key, Type serviceType, Type classType)
+        {
+            RegisterSingletonResolver(key, serviceType, classType);
+            CheckForAutoStart(key, serviceType, classType);
+        }
 
-		public override object Resolve(string key)
-		{
-			return Resolve(Type.GetType(key));
-		}
+        public override object Resolve(string key)
+        {
+            return Resolve(Type.GetType(key));
+        }
 
-		public override object Resolve(Type serviceType)
-		{
-			if (resolvers.ContainsKey(serviceType))
-				return resolvers[serviceType](serviceType);
+        public override object Resolve(Type serviceType)
+        {
+            if (resolvers.ContainsKey(serviceType))
+                return resolvers[serviceType](serviceType);
 
-			if (serviceType.IsGenericType)
-			{
-				Type baseDefinition = serviceType.GetGenericTypeDefinition();
+            if (serviceType.IsGenericType)
+            {
+                Type baseDefinition = serviceType.GetGenericTypeDefinition();
 
-				if (resolvers.ContainsKey(baseDefinition))
-				{
-					return resolvers[baseDefinition](serviceType);
-				}
-			}
+                if (resolvers.ContainsKey(baseDefinition))
+                {
+                    return resolvers[baseDefinition](serviceType);
+                }
+            }
 
-			throw new N2Exception("Couldn't find any service of the type " + serviceType);
-		}
+            throw new N2Exception("Couldn't find any service of the type " + serviceType);
+        }
 
-		/// <summary>Resolves all services serving the given interface.</summary>
-		/// <param name="serviceType">The type of service to resolve.</param>
-		/// <returns>All services registered to serve the provided interface.</returns>
-		public override Array ResolveAll(Type serviceType)
-		{
-			Func<Type, IEnumerable<object>> listResolver;
-			if (!listResolvers.TryGetValue(serviceType, out listResolver))
-				return Activator.CreateInstance(serviceType.MakeArrayType(), 0) as Array;
-			
-			var instances = listResolver(serviceType).ToList().ToArray();
-			var returnArray = Activator.CreateInstance(serviceType.MakeArrayType(), instances.Length) as Array;
-			Array.Copy(instances, returnArray, instances.Length);
-			return returnArray;
-		}
+        /// <summary>Resolves all services serving the given interface.</summary>
+        /// <param name="serviceType">The type of service to resolve.</param>
+        /// <returns>All services registered to serve the provided interface.</returns>
+        public override IEnumerable<object> ResolveAll(Type serviceType)
+        {
+            Func<Type, IEnumerable<object>> listResolver;
+            if (!listResolvers.TryGetValue(serviceType, out listResolver))
+                //return Activator.CreateInstance(serviceType.MakeArrayType(), 0) as Array;
+                return new object[0];
+            
+            return listResolver(serviceType);
+            //var instances = listResolver(serviceType).ToList().ToArray();
+            //var returnArray = Activator.CreateInstance(serviceType.MakeArrayType(), instances.Length) as Array;
+            //Array.Copy(instances, returnArray, instances.Length);
+            //return returnArray;
+        }
 
-		/// <summary>Resolves all services of the given type.</summary>
-		/// <typeparam name="T">The type of service to resolve.</typeparam>
-		/// <returns>All services registered to serve the provided interface.</returns>
-		public override T[] ResolveAll<T>()
-		{
-			return ResolveAll(typeof(T)).Cast<T>().ToArray();
-		}
+        /// <summary>Resolves all services.</summary>
+        /// <returns>All registered services.</returns>
+        public override IEnumerable<ServiceInfo> Diagnose()
+        {
+            return resolvers.Keys
+                .Select(t => new ServiceInfo { Key = t.FullName, ServiceType = t, ImplementationType = t, Resolve = () => Resolve(t), ResolveAll = () => ResolveAll(t) });
+        }
 
-		public override void Release(object instance)
-		{
-			foreach (var pair in container)
-			{
-				if (pair.Value == instance)
-				{
-					container.Remove(pair.Key);
-					break;
-				}
-			}
-		}
+        /// <summary>Resolves all services of the given type.</summary>
+        /// <typeparam name="T">The type of service to resolve.</typeparam>
+        /// <returns>All services registered to serve the provided interface.</returns>
+        public override IEnumerable<T> ResolveAll<T>()
+        {
+            return ResolveAll(typeof(T)).Cast<T>();
+        }
 
-		public override void StartComponents()
-		{
-			isInitialized = true;
-			List<Type> keys = new List<Type>(waitingList.Keys);
-			foreach (var key in keys)
-			{
-				try
-				{
-					CheckForAutoStart(key.FullName.ToLowerInvariant(), key, waitingList[key]);
-					waitingList.Remove(key);
-				}
-				catch (MissingDependencyException)
-				{
-				}
-			}
-		}
+        public override void Release(object instance)
+        {
+            foreach (var pair in container)
+            {
+                if (pair.Value == instance)
+                {
+                    container.Remove(pair.Key);
+                    break;
+                }
+            }
+        }
 
-		private object ReturnContainerInstance(Type serviceType)
-		{
-			if (!container.ContainsKey(serviceType))
-				throw new N2Exception("Couldn't find any service of the type " + serviceType);
+        public override void StartComponents()
+        {
+            isInitialized = true;
+            List<Type> keys = new List<Type>(waitingList.Keys);
+            foreach (var key in keys)
+            {
+                try
+                {
+                    CheckForAutoStart(key.FullName.ToLowerInvariant(), key, waitingList[key]);
+                    waitingList.Remove(key);
+                }
+                catch (MissingDependencyException)
+                {
+                }
+            }
+        }
 
-			return container[serviceType];
-		}
+        private object ReturnContainerInstance(Type serviceType)
+        {
+            if (!container.ContainsKey(serviceType))
+                throw new N2Exception("Couldn't find any service of the type " + serviceType);
 
-		private void CheckForAutoStart(string key, Type serviceType, Type classType)
-		{
-			if (IsAutoStart(classType))
-			{
-				if (!isInitialized)
-				{
-					waitingList[serviceType] = classType;
-					return;
-				}
+            return container[serviceType];
+        }
 
-				IAutoStart instance = Resolve(serviceType) as IAutoStart;
-				Trace.WriteLine("Starting " + instance);
-				instance.Start();
-			}
-		}
+        private void CheckForAutoStart(string key, Type serviceType, Type classType)
+        {
+            if (IsAutoStart(classType))
+            {
+                if (!isInitialized)
+                {
+                    waitingList[serviceType] = classType;
+                    return;
+                }
 
-		private static bool IsAutoStart(Type classType)
-		{
-			return typeof(IAutoStart).IsAssignableFrom(classType);
-		}
+                IAutoStart instance = Resolve(serviceType) as IAutoStart;
+                logger.Info("Starting " + instance);
+                instance.Start();
+            }
+        }
 
-		private void RegisterSingletonResolver(string key, Type serviceType, Type classType)
-		{
-			if (resolvers.ContainsKey(serviceType))
-			{
-				Trace.WriteLine("Already contains service " + serviceType + ". " + classType + " is now default.");
-			}
+        private static bool IsAutoStart(Type classType)
+        {
+            return typeof(IAutoStart).IsAssignableFrom(classType);
+        }
 
-			var instanceResolver = CreateInstanceResolver(key, classType);
-			AddBaseTypes(resolvers, serviceType, instanceResolver);
+        private void RegisterSingletonResolver(string key, Type serviceType, Type classType)
+        {
+            if (resolvers.ContainsKey(serviceType))
+            {
+                logger.Info("Already contains service " + serviceType + ". " + classType + " is now default.");
+            }
 
-			var listResolver = CreateListResolver(serviceType, instanceResolver);
-			AddBaseTypes(listResolvers, serviceType, listResolver);
-		}
+            var instanceResolver = CreateInstanceResolver(key, classType);
+            AddBaseTypes(resolvers, serviceType, instanceResolver);
 
-		private Func<Type, object> CreateInstanceResolver(string key, Type classType)
-		{
-			if (classType.ContainsGenericParameters)
-			{
-				return delegate(Type type)
-				{
-					object instance;
-					if (container.TryGetValue(type, out instance))
-						return instance;
+            var listResolver = CreateListResolver(serviceType, instanceResolver);
+            AddBaseTypes(listResolvers, serviceType, listResolver);
+        }
 
-					Trace.WriteLine("Creating " + classType);
-					object componentInstance = CreateInstance(key, type, classType);
-					container[type] = componentInstance;
-					return componentInstance;
-				};
-			}
-			else
-			{
-				return delegate(Type type)
-				{
-					object instance;
-					if (container.TryGetValue(classType, out instance))
-						return instance;
+        private Func<Type, object> CreateInstanceResolver(string key, Type classType)
+        {
+            if (classType.ContainsGenericParameters)
+            {
+                return delegate(Type type)
+                {
+                    object instance;
+                    if (container.TryGetValue(type, out instance))
+                        return instance;
 
-					object componentInstance = CreateInstance(key, type, classType);
-					container[classType] = componentInstance;
-					container[type] = componentInstance;
-					return componentInstance;
-				};
-			}
-		}
+                    logger.Info("Creating " + classType);
+                    object componentInstance = CreateInstance(key, type, classType);
+                    container[type] = componentInstance;
+                    return componentInstance;
+                };
+            }
+            else
+            {
+                return delegate(Type type)
+                {
+                    object instance;
+                    if (container.TryGetValue(classType, out instance))
+                        return instance;
 
-		private Func<Type, IEnumerable<object>> CreateListResolver(Type serviceType, Func<Type, object> resolver)
-		{
-			Func<Type, IEnumerable<object>> previousListResolver, listResolver;
-			if (listResolvers.TryGetValue(serviceType, out previousListResolver))
-			{
-				listResolver = delegate(Type type)
-				{
-					List<object> instances = new List<object>();
-					instances.AddRange(previousListResolver(type));
-					instances.Add(resolver(type));
-					return instances;
-				};
-			}
-			else
-			{
-				listResolver = delegate(Type type)
-				{
-					return new object[] { resolver(type) };
-				};
-			}
-			return listResolver;
-		}
+                    object componentInstance = CreateInstance(key, type, classType);
+                    container[classType] = componentInstance;
+                    container[type] = componentInstance;
+                    return componentInstance;
+                };
+            }
+        }
 
-		private void AddBaseTypes<T>(IDictionary<Type, Func<Type, T>> resolvers, Type serviceType, Func<Type, T> resolver)
-		{
-			resolvers[serviceType] = resolver;
-			if (serviceType.IsClass && serviceType != typeof(object))
-				AddBaseTypes(resolvers, serviceType.BaseType, resolver);
-		}
+        private Func<Type, IEnumerable<object>> CreateListResolver(Type serviceType, Func<Type, object> resolver)
+        {
+            Func<Type, IEnumerable<object>> previousListResolver, listResolver;
+            if (listResolvers.TryGetValue(serviceType, out previousListResolver))
+            {
+                listResolver = delegate(Type type)
+                {
+                    List<object> instances = new List<object>();
+                    instances.AddRange(previousListResolver(type));
+                    instances.Add(resolver(type));
+                    return instances;
+                };
+            }
+            else
+            {
+                listResolver = delegate(Type type)
+                {
+                    return new object[] { resolver(type) };
+                };
+            }
+            return listResolver;
+        }
 
-		private void RegisterTransientResolver(string key, Type serviceType, Type classType)
-		{
-			if (IsAutoStart(classType))
-				resolvers[serviceType] = delegate(Type type) 
-				{
-					var instance = CreateInstance(key, type, classType);
-					((IAutoStart)instance).Start();
-					return instance;
-				};
-			else
-				resolvers[serviceType] = delegate(Type type) { return CreateInstance(key, type, classType); };
-		}
+        private void AddBaseTypes<T>(IDictionary<Type, Func<Type, T>> resolvers, Type serviceType, Func<Type, T> resolver)
+        {
+            resolvers[serviceType] = resolver;
+            if (serviceType.IsClass && serviceType != typeof(object))
+                AddBaseTypes(resolvers, serviceType.BaseType, resolver);
+        }
 
-		protected object CreateInstance(string key, Type serviceType, Type classType)
-		{
-			if (classType.ContainsGenericParameters)
-			{
-				Type[] arguments = serviceType.GetGenericArguments();
-				classType = classType.MakeGenericType(arguments);
-			}
+        private void RegisterTransientResolver(string key, Type serviceType, Type classType)
+        {
+            if (IsAutoStart(classType))
+                resolvers[serviceType] = delegate(Type type) 
+                {
+                    var instance = CreateInstance(key, type, classType);
+                    ((IAutoStart)instance).Start();
+                    return instance;
+                };
+            else
+                resolvers[serviceType] = delegate(Type type) { return CreateInstance(key, type, classType); };
+        }
 
-			ConstructorFindInfo constructorInfo = FindBestConstructor(classType);
+        protected object CreateInstance(string key, Type serviceType, Type classType)
+        {
+            if (classType.ContainsGenericParameters)
+            {
+                Type[] arguments = serviceType.GetGenericArguments();
+                classType = classType.MakeGenericType(arguments);
+            }
 
-			if (constructorInfo.ConstructorInfo == null)
-			{
-				var errorMessage = new StringBuilder("Could not find resolvable constructor for class " + classType.FullName);
+            ConstructorFindInfo constructorInfo = FindBestConstructor(classType);
 
-				foreach (ParameterInfo parameter in constructorInfo.CouldNotFindParameters)
-				{
-					errorMessage.AppendLine("\nCould not resolve " + parameter.ParameterType);
-				}
+            if (constructorInfo.ConstructorInfo == null)
+            {
+                var errorMessage = new StringBuilder("Could not find resolvable constructor for class " + classType.FullName);
 
-				throw new MissingDependencyException(errorMessage.ToString());
-			}
-			ConstructorInfo constructor = constructorInfo.ConstructorInfo;
-			
-			object[] parameters = CreateConstructorParameters(constructor.GetParameters());
-			object componentInstance = constructor.Invoke(parameters);
-			AddComponentInstance(key, serviceType, componentInstance);
-			return componentInstance;
-		}
+                foreach (ParameterInfo parameter in constructorInfo.CouldNotFindParameters)
+                {
+                    errorMessage.AppendLine("\nCould not resolve " + parameter.ParameterType);
+                }
 
-		protected virtual object[] CreateConstructorParameters(ParameterInfo[] parameterInfos)
-		{
-			var parameters = new object[parameterInfos.Length];
-			for (int i = 0; i < parameterInfos.Length; i++)
-			{
-				var parameterType = parameterInfos[i].ParameterType;
-				if(parameterType.IsArray)
-					parameters[i] = ResolveAll(parameterType.GetElementType());
-				else
-					parameters[i] = Resolve(parameterType);
-			}
-			return parameters;
-		}
+                throw new MissingDependencyException(errorMessage.ToString());
+            }
+            ConstructorInfo constructor = constructorInfo.ConstructorInfo;
+            
+            object[] parameters = CreateConstructorParameters(constructor.GetParameters());
+            object componentInstance = constructor.Invoke(parameters);
+            AddComponentInstance(key, serviceType, componentInstance);
+            return componentInstance;
+        }
 
-		protected virtual ConstructorFindInfo FindBestConstructor(Type classType)
-		{
-			int maxParameters = -1;
-			ConstructorInfo bestConstructor = null;
-			ParameterInfo[] couldNotFindParameters = null;
-			foreach (ConstructorInfo constructor in classType.GetConstructors())
-			{
-				ParameterInfo[] parameters = constructor.GetParameters();
-				ParameterInfo[] couldNotFindParametersTemp = ResolveAllParameters(parameters);
-				if (parameters.Length <= maxParameters || couldNotFindParametersTemp.Length != 0)
-				{
-					couldNotFindParameters = couldNotFindParametersTemp;
-					continue;
-				}
+        protected virtual object[] CreateConstructorParameters(ParameterInfo[] parameterInfos)
+        {
+            var parameters = new object[parameterInfos.Length];
+            for (int i = 0; i < parameterInfos.Length; i++)
+            {
+                var parameterType = parameterInfos[i].ParameterType;
+                if(parameterType.IsArray)
+                {
+                    var instancesArray = ResolveAll(parameterType.GetElementType()).ToArray();
+                    var injectedArray = Activator.CreateInstance(parameterType, instancesArray.Length) as Array;
+                    Array.Copy(instancesArray, injectedArray, instancesArray.Length);
+                    parameters[i] = injectedArray;
+                }
+                else
+                    parameters[i] = Resolve(parameterType);
+            }
+            return parameters;
+        }
 
-				bestConstructor = constructor;
-				maxParameters = parameters.Length;
-				couldNotFindParameters = new ParameterInfo[0];
-			}
+        protected virtual ConstructorFindInfo FindBestConstructor(Type classType)
+        {
+            int maxParameters = -1;
+            ConstructorInfo bestConstructor = null;
+            ParameterInfo[] couldNotFindParameters = null;
+            foreach (ConstructorInfo constructor in classType.GetConstructors())
+            {
+                ParameterInfo[] parameters = constructor.GetParameters();
+                ParameterInfo[] couldNotFindParametersTemp = ResolveAllParameters(parameters);
+                if (parameters.Length <= maxParameters || couldNotFindParametersTemp.Length != 0)
+                {
+                    couldNotFindParameters = couldNotFindParametersTemp;
+                    continue;
+                }
 
-			return new ConstructorFindInfo
-			       	{
-			       		ConstructorInfo = bestConstructor,
-			       		CouldNotFindParameters = couldNotFindParameters
-			       	};
-		}
+                bestConstructor = constructor;
+                maxParameters = parameters.Length;
+                couldNotFindParameters = new ParameterInfo[0];
+            }
 
-		private ParameterInfo[] ResolveAllParameters(IEnumerable<ParameterInfo> parameters)
-		{
-			var result = new List<ParameterInfo>();
-			foreach (ParameterInfo parameter in parameters)
-			{
-				bool resolverExists = resolvers.ContainsKey(parameter.ParameterType);
-				bool genericResolverExists = (parameter.ParameterType.IsGenericType && resolvers.ContainsKey(parameter.ParameterType.GetGenericTypeDefinition()));
-				bool arrayResolverExists = (parameter.ParameterType.IsArray && resolvers.ContainsKey(parameter.ParameterType.GetElementType()));
-				if (!resolverExists && !genericResolverExists && !arrayResolverExists && !parameter.ParameterType.IsArray)
-				{
-					result.Add(parameter);
-				}
-			}
-			return result.ToArray();
-		}
+            return new ConstructorFindInfo
+                    {
+                        ConstructorInfo = bestConstructor,
+                        CouldNotFindParameters = couldNotFindParameters
+                    };
+        }
 
-		#region Nested type: ConstructorFindInfo
+        private ParameterInfo[] ResolveAllParameters(IEnumerable<ParameterInfo> parameters)
+        {
+            var result = new List<ParameterInfo>();
+            foreach (ParameterInfo parameter in parameters)
+            {
+                bool resolverExists = resolvers.ContainsKey(parameter.ParameterType);
+                bool genericResolverExists = (parameter.ParameterType.IsGenericType && resolvers.ContainsKey(parameter.ParameterType.GetGenericTypeDefinition()));
+                bool arrayResolverExists = (parameter.ParameterType.IsArray && resolvers.ContainsKey(parameter.ParameterType.GetElementType()));
+                if (!resolverExists && !genericResolverExists && !arrayResolverExists && !parameter.ParameterType.IsArray)
+                {
+                    result.Add(parameter);
+                }
+            }
+            return result.ToArray();
+        }
 
-		public class ConstructorFindInfo
-		{
-			public ConstructorInfo ConstructorInfo { get; set; }
+        #region Nested type: ConstructorFindInfo
 
-			public ParameterInfo[] CouldNotFindParameters { get; set; }
-		}
+        public class ConstructorFindInfo
+        {
+            public ConstructorInfo ConstructorInfo { get; set; }
 
-		#endregion
+            public ParameterInfo[] CouldNotFindParameters { get; set; }
+        }
 
-		class MissingDependencyException : Exception
-		{
-			public MissingDependencyException(string message)
-				: base(message)
-			{
-			}
-		}
-	}
+        #endregion
+
+        class MissingDependencyException : Exception
+        {
+            public MissingDependencyException(string message)
+                : base(message)
+            {
+            }
+        }
+    }
 }

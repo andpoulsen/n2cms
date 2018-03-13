@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Data;
 using System.IO;
@@ -8,102 +8,59 @@ using N2.Persistence.NH;
 using N2.Plugin;
 using NHibernate.Criterion;
 using N2.Web;
+using N2.Engine;
+using System.Diagnostics;
+using NHibernate;
 
 namespace N2.Edit.FileSystem.NH
 {
-    public class DatabaseFileSystem : IFileSystem, IAutoStart
+    /// <summary>
+    /// A file system implementation that stores files in the database.
+    /// </summary>
+    [Service(typeof(IFileSystem), Configuration = "dbfs", Replaces = typeof(MappedFileSystem))]
+    public class DatabaseFileSystem : IFileSystem
     {
+        private readonly Engine.Logger<DatabaseFileSystem> logger;
         private readonly ISessionProvider _sessionProvider;
         private const long UploadFileSize = long.MaxValue;
+        private int chunkSize;
 
-		#region class DatabaseFileSystemStream
-		private class DatabaseFileSystemStream : MemoryStream
-        {
-            private readonly FileSystemItem attachedTo;
-            private readonly DatabaseFileSystem fileSys;
-            private bool changed;
-
-            public DatabaseFileSystemStream(FileSystemItem attachedTo, DatabaseFileSystem fileSys, byte [] data)
-            {
-                if(attachedTo==null) throw new Exception("attachedTo must not be null");
-                if(fileSys == null) throw new Exception("fileSys most not be null");
-
-                this.attachedTo = attachedTo;
-                this.fileSys = fileSys;
-                
-                base.Write(data, 0, data.Length);
-                Position = 0;
-            }
-
-            public override sealed long Position
-            {
-                get { return base.Position; }
-                set { base.Position = value; }
-            }
-
-            public override sealed void Write(byte[] buffer, int offset, int count)
-            {
-                changed = true;
-                base.Write(buffer, offset, count);
-            }
-
-            public override void WriteByte(byte value)
-            {
-                changed = true;
-                base.WriteByte(value);
-            }
-
-            public override void Flush()
-            {
-                if (changed)
-                    fileSys.UpdateFile(attachedTo.Path, this);
-
-                base.Flush();
-            }
-
-            protected override void  Dispose(bool disposing)
-            {
-                Flush();
-                base.Dispose(disposing);
-            }
-        }
-		#endregion
-
-		public DatabaseFileSystem(ISessionProvider sessionProvider)
+        public DatabaseFileSystem(ISessionProvider sessionProvider, DatabaseSection config)
         {
             this._sessionProvider = sessionProvider;
+            this.chunkSize = config.Files.ChunkSize;
         }
 
-        private IEnumerable<FileSystemItem> FindChildren(Path path, ICriterion criterion)
+        private IEnumerable<FileSystemItem> FindChildren(FileSystemPath path, ICriterion criterion)
         {
-            return _sessionProvider.OpenSession.Session
-                .CreateCriteria<FileSystemItem>()
+            return Session.CreateCriteria<FileSystemItem>()
                 .Add(Restrictions.Eq("Path.Parent", path.ToString()))
                 .Add(criterion)
+                .AddOrder(Order.Asc("Path.Name"))
+                .SetCacheable(true)
                 .List<FileSystemItem>();
         }
 
-        private FileSystemItem GetSpecificItem(Path path)
+        private FileSystemItem GetSpecificItem(FileSystemPath path)
         {
-            return _sessionProvider.OpenSession.Session
-                .CreateCriteria<FileSystemItem>()
+            var c = Session.CreateCriteria<FileSystemItem>()
                 .Add(Restrictions.Eq("Path", path))
-                .UniqueResult<FileSystemItem>();
+                .SetCacheable(true);
+
+            return c.UniqueResult<FileSystemItem>();
         }
 
-        private void EnsureParentExists(Path target)
+        private void EnsureParentExists(FileSystemPath target)
         {
             if(!DirectoryExists(target.Parent))
             {
-                _CreateDirectory(target.Parent);
+                CreateDirectoryInternal(target.Parent);
             }
         }
 
-        private void AssertParentExists(Path target)
+        private void AssertParentExists(FileSystemPath target)
         {
-            var uploadFolders = new EditSection().UploadFolders;
-            if (uploadFolders.Folders.Any(uploadFolder => Path.Directory(uploadFolder).ToString() == target.Parent))
-                EnsureParentExists(target);
+            EnsureParentExists(target);
 
             if (!DirectoryExists(target.Parent))
             {
@@ -113,7 +70,7 @@ namespace N2.Edit.FileSystem.NH
 
         public IEnumerable<FileData> GetFiles(string parentVirtualPath)
         {
-            var path = Path.Directory(parentVirtualPath);
+            var path = FileSystemPath.Directory(parentVirtualPath);
 
             return from child in FindChildren(path, Restrictions.IsNotNull("Length"))
                    select child.ToFileData();
@@ -121,13 +78,17 @@ namespace N2.Edit.FileSystem.NH
 
         public FileData GetFile(string virtualPath)
         {
-            var path = Path.File(virtualPath);
-            return GetSpecificItem(path).ToFileData();
+            var path = FileSystemPath.File(virtualPath);
+            var item = GetSpecificItem(path);
+
+            return item == null
+                ? null
+                : item.ToFileData();
         }
 
         public IEnumerable<DirectoryData> GetDirectories(string parentVirtualPath)
         {
-            var path = Path.Directory(parentVirtualPath);
+            var path = FileSystemPath.Directory(parentVirtualPath);
 
             return from child in FindChildren(path, Restrictions.IsNull("Length"))
                    select child.ToDirectoryData();
@@ -135,32 +96,44 @@ namespace N2.Edit.FileSystem.NH
 
         public DirectoryData GetDirectory(string virtualPath)
         {
-            var path = Path.Directory(virtualPath);
+            var path = FileSystemPath.Directory(virtualPath);
             var item = GetSpecificItem(path);
 
             return item == null
-                ? new DirectoryData { VirtualPath = path.ToString() }
+                ? null
                 : item.ToDirectoryData();
         }
 
+        /// <summary>Searches for files in all Upload Directories.</summary>
+        /// <param name="query">The search term</param>
+        /// <param name="uploadDirectories">All Upload Directories</param>
+        /// <returns>An enumeration of files matching the query.</returns>
+        public IEnumerable<FileData> SearchFiles(string query, List<Collections.HierarchyNode<ContentItem>> uploadDirectories)
+        {
+            //Not implemented
+            return null;
+        }
+
+
         public bool FileExists(string virtualPath)
         {
-            var path = Path.File(virtualPath);
+            var path = FileSystemPath.File(virtualPath);
             var item = GetSpecificItem(path);
             return item != null && item.Length.HasValue;
         }
 
         public void MoveFile(string fromVirtualPath, string destinationVirtualPath)
         {
-            var source = Path.File(fromVirtualPath);
-            var target = Path.File(destinationVirtualPath);
+            var source = FileSystemPath.File(fromVirtualPath);
+            var target = FileSystemPath.File(destinationVirtualPath);
 
-            using (var trx = _sessionProvider.OpenSession.Session.BeginTransaction())
+            using (var trx = Session.BeginTransaction())
             {
                 AssertParentExists(target);
 
                 var file = GetSpecificItem(source);
                 file.Path = target;
+                file.Updated = Utility.CurrentTime();
                 trx.Commit();
             }
 
@@ -172,11 +145,19 @@ namespace N2.Edit.FileSystem.NH
 
         public void DeleteFile(string virtualPath)
         {
-            using (var trx = _sessionProvider.OpenSession.Session.BeginTransaction())
+            using (var trx = Session.BeginTransaction())
             {
-                var path = Path.File(virtualPath);
-                var item = GetSpecificItem(path);
-                _sessionProvider.OpenSession.Session.Delete(item);
+                var path = FileSystemPath.File(virtualPath);
+
+                var file = GetSpecificItem(path);
+
+                int deletedChunks = Session.CreateQuery("delete from " + typeof(FileSystemChunk).Name + " where BelongsTo = :file")
+                    .SetParameter("file", file)
+                    .ExecuteUpdate();
+
+                Session.Delete(file);
+                logger.Debug("Deleted 1 item and " + deletedChunks + " chunks at " + path);
+
                 trx.Commit();
             }
 
@@ -188,10 +169,11 @@ namespace N2.Edit.FileSystem.NH
 
         public void CopyFile(string fromVirtualPath, string destinationVirtualPath)
         {
-            var source = Path.File(fromVirtualPath);
-            var target = Path.File(destinationVirtualPath);
+            var source = FileSystemPath.File(fromVirtualPath);
+            var target = FileSystemPath.File(destinationVirtualPath);
 
-            using (var trx = _sessionProvider.OpenSession.Session.BeginTransaction())
+            var s = Session;
+            using (var trx = s.BeginTransaction())
             {
                 AssertParentExists(target);
 
@@ -200,12 +182,23 @@ namespace N2.Edit.FileSystem.NH
                 var copy = new FileSystemItem
                 {
                     Path = target,
-                    Data = file.Data,
                     Length = file.Length,
-                    Created = DateTime.Now
+                    Created = Utility.CurrentTime(),
+                    Updated = Utility.CurrentTime()
                 };
 
-                _sessionProvider.OpenSession.Session.Save(copy);
+                s.Save(copy);
+
+                foreach (var sourceChunk in GetChunks(file))
+                {
+                    var chunkCopy = CreateChunk(copy, sourceChunk.Offset, sourceChunk.Data);
+                    s.Save(chunkCopy);
+                    
+                    s.Flush();
+                    s.Evict(sourceChunk);
+                    s.Evict(chunkCopy);
+                }
+
                 trx.Commit();
             }
 
@@ -215,17 +208,21 @@ namespace N2.Edit.FileSystem.NH
             }
         }
 
-        public Stream OpenFile(string virtualPath)
+        private NHibernate.ISession Session
         {
-            var path = Path.File(virtualPath);
+            get { return _sessionProvider.OpenSession.Session; }
+        }
+
+        public Stream OpenFile(string virtualPath, bool readOnly = false)
+        {
+            var path = FileSystemPath.File(virtualPath);
 
             if(!FileExists(path.ToString()))
             {
-                CreateFile(path, null);
+                CreateFile(path, new MemoryStream());
             }
             var blob = GetSpecificItem(path);
-
-            var stream = new DatabaseFileSystemStream(blob, this, blob.Data);
+            var stream = new DatabaseFileSystemStream(blob, this, Session, chunkSize);
             return stream;
         }
 
@@ -233,11 +230,11 @@ namespace N2.Edit.FileSystem.NH
         {
             if (!FileExists(virtualPath))
             {
-                CreateFile(Path.File(virtualPath), inputStream);
+                CreateFile(FileSystemPath.File(virtualPath), inputStream);
             }
             else
             {
-                UpdateFile(Path.File(virtualPath), inputStream);
+                UpdateFile(FileSystemPath.File(virtualPath), inputStream);
             }
 
             if (FileWritten != null)
@@ -254,87 +251,215 @@ namespace N2.Edit.FileSystem.NH
             return UploadFileSize > inputStream.Length;
         }
 
-        private static void CheckStreamSize(Stream inputStream, Path virtualPath)
+        private static void CheckStreamSize(Stream inputStream, FileSystemPath virtualPath)
         {
             if (!IsStreamSizeOk(inputStream))
                 throw new Exception(virtualPath + " could not be uploaded created because its size (" + inputStream.Length + ") exceeds the configured UploadFileMaxSize");
         }
 
-        private void UpdateFile(Path virtualPath, Stream inputStream)
+        internal void UpdateFile(FileSystemPath virtualPath, Stream inputStream)
         {
             CheckStreamSize(inputStream, virtualPath);
+            if (inputStream.CanSeek && inputStream.Position > 0)
+                inputStream.Position = 0;
 
             var file = GetSpecificItem(virtualPath);
-                
-            using (var trx = _sessionProvider.OpenSession.Session.BeginTransaction())
-            using (var buffer = (inputStream.CanSeek && (inputStream.Length <= int.MaxValue ) ? new MemoryStream((int)inputStream.Length) : new MemoryStream()))
-            {
-                inputStream.Position = 0;
-                CopyStream(inputStream, buffer);
-                inputStream.Position = 0;
+            file.Updated = Utility.CurrentTime();
 
-                file.Data = (inputStream.CanSeek && inputStream.Length == buffer.GetBuffer().Length ) ? buffer.GetBuffer() : buffer.ToArray();
-                file.Created = DateTime.Now;
-                file.Length = buffer.Length;
-                _sessionProvider.OpenSession.Session.Update(file);
+            var s = Session;
+            using (var trx = s.BeginTransaction())
+            {
+                var temp = new byte[chunkSize];
+                int offset = 0;
+                int length = 0;
+
+                bool endOfInputFile = false;
+                foreach (var chunk in GetChunks(file.Path))
+                {
+                    if (endOfInputFile)
+                    {
+                        s.Delete(chunk);
+                        s.Flush();
+                        s.Evict(chunk);
+                        continue;
+                    }
+
+                    int size = inputStream.Read(temp, 0, temp.Length);
+                    endOfInputFile = size <= 0;
+                    length += size;
+                    
+                    if (endOfInputFile)
+                    {
+                        s.Delete(chunk);
+                        s.Flush();
+                        s.Evict(chunk);
+                        continue;
+                    }
+
+                    var buffer = Copy(temp, size);
+
+                    chunk.Offset = offset;
+                    chunk.Data = buffer;
+                    s.Update(chunk);
+                    s.Flush();
+                    s.Evict(chunk);
+
+                    offset += size;
+                }
+
+                while (true && !endOfInputFile)
+                {
+                    int size = inputStream.Read(temp, 0, temp.Length);
+                    if (size <= 0)
+                        break;
+
+                    length += size;
+                    var buffer = Copy(temp, size);
+                    var chunk = CreateChunk(file, offset, buffer);
+                    s.Save(chunk);
+                    s.Flush();
+                    s.Evict(chunk);
+                }
+
+                file.Length = length;
+                s.Update(file);
+                
                 trx.Commit();
             }
         }
 
-        private void CreateFile(Path virtualPath, Stream inputStream)
+        private static byte[] Copy(byte[] temp, int size)
         {
-            CheckStreamSize(inputStream,virtualPath);
+            var buffer = new byte[size];
+            Array.Copy(temp, buffer, size);
+            return buffer;
+        }
 
-            using (var trx = _sessionProvider.OpenSession.Session.BeginTransaction())
-            using (var buffer = (inputStream.CanSeek && (inputStream.Length <= int.MaxValue) ? new MemoryStream((int)inputStream.Length) : new MemoryStream()))
+        private void CreateFile(FileSystemPath virtualPath, Stream inputStream)
+        {
+            EnsureParentExists(virtualPath);
+
+            CheckStreamSize(inputStream, virtualPath);
+            long fileSize = inputStream.CanSeek ? inputStream.Length : 0;
+            
+            using (var trx = Session.BeginTransaction())
             {
-                AssertParentExists(virtualPath);
-
-                inputStream.Position = 0;
-                CopyStream(inputStream, buffer);
-                inputStream.Position = 0;
-
                 var item = new FileSystemItem
-                               {
-                                   Path = virtualPath,
-                                   Data = (inputStream.CanSeek && inputStream.Length == buffer.GetBuffer().Length ) ? buffer.GetBuffer() : buffer.ToArray(),
-                                   Created = DateTime.Now,
-                                   Length = buffer.Length
-                               };
+                {
+                    Path = virtualPath,
+                    Created = Utility.CurrentTime(),
+                    Updated = Utility.CurrentTime(),
+                    Length = fileSize
+                };
+                Session.Save(item);
 
-                _sessionProvider.OpenSession.Session.Save(item);
+                var temp = new byte[chunkSize];
+                int offset = 0;
+                int size = 0;
+                while(true)
+                {
+                    size = inputStream.Read(temp, 0, temp.Length);
+                    if (size <= 0)
+                        break;
+
+                    var buffer = Copy(temp, size);
+
+                    var chunk = CreateChunk(item, offset, buffer);
+                    Session.Save(chunk);
+
+                    if (size < temp.Length)
+                        break;
+
+                    offset += size;
+                }
+
+                if (fileSize == 0)
+                {
+                    item.Length = offset + size;
+                    Session.Update(item);
+                }
+
                 trx.Commit();
             }
+            //using (var buffer = (inputStream.CanSeek && (inputStream.Length <= int.MaxValue) ? new MemoryStream((int)inputStream.Length) : new MemoryStream()))
+            //{
+            //  AssertParentExists(virtualPath);
+
+            //  inputStream.Position = 0;
+            //  CopyStream(inputStream, buffer);
+            //  inputStream.Position = 0;
+
+            //  var item = new FileSystemItem
+            //                 {
+            //                     Path = virtualPath,
+            //                     Data = (inputStream.CanSeek && inputStream.Length == buffer.GetBuffer().Length ) ? buffer.GetBuffer() : buffer.ToArray(),
+            //                     Created = Utility.CurrentTime(),
+            //                     Updated = Utility.CurrentTime(),
+            //                     Length = buffer.Length
+            //                 };
+
+            //  Session.Save(item);
+            //  trx.Commit();
+            //}
+        }
+
+        private static FileSystemChunk CreateChunk(FileSystemItem item, int offset, byte[] buffer)
+        {
+            var chunk = new FileSystemChunk
+            {
+                BelongsTo = item,
+                Data = buffer,
+                Offset = offset
+            };
+            return chunk;
         }
 
         public void ReadFileContents(string virtualPath, Stream outputStream)
         {
-            var path = Path.File(virtualPath);
-            var blob = GetSpecificItem(path);
-            outputStream.Write(blob.Data, 0, blob.Data.Length);
+            var path = FileSystemPath.File(virtualPath);
+            foreach (var chunk in GetChunks(path))
+            {
+                outputStream.Write(chunk.Data, 0, chunk.Data.Length);
+                Session.Evict(chunk);
+            }
+        }
+
+        private IEnumerable<FileSystemChunk> GetChunks(FileSystemPath filePath)
+        {
+            return Session.CreateQuery("from FileSystemChunk fsc where fsc.BelongsTo.Path.Parent = :parentPath and fsc.BelongsTo.Path.Name = :name order by fsc.Offset")
+                .SetParameter("parentPath", filePath.Parent)
+                .SetParameter("name", filePath.Name)
+                .Enumerable<FileSystemChunk>();
+        }
+
+        private IEnumerable<FileSystemChunk> GetChunks(FileSystemItem file)
+        {
+            return Session.CreateQuery("from FileSystemChunk fsc where fsc.BelongsTo = :belongsTo order by fsc.Offset")
+                .SetParameter("belongsTo", file)
+                .Enumerable<FileSystemChunk>();
         }
 
         public bool DirectoryExists(string virtualPath)
         {
-            var path = Path.Directory(virtualPath);
+            var path = FileSystemPath.Directory(virtualPath);
             var item = GetSpecificItem(path);
-            return item != null && !item.Length.HasValue;
+            return item != null;
         }
 
         public void MoveDirectory(string fromVirtualPath, string destinationVirtualPath)
         {
-            var source = Path.Directory(fromVirtualPath);
-            var target = Path.Directory(destinationVirtualPath);
+            var source = FileSystemPath.Directory(fromVirtualPath);
+            var target = FileSystemPath.Directory(destinationVirtualPath);
 
             if (target.IsDescendantOf(source))
             {
                 throw new ApplicationException("Cannot move directory into own subdictory.");
             }
 
-            using (var trx = _sessionProvider.OpenSession.Session.BeginTransaction())
+            using (var trx = Session.BeginTransaction())
             {
                 var directory = GetSpecificItem(source);
-                var descendants = _sessionProvider.OpenSession.Session
+                var descendants = Session
                     .CreateCriteria<FileSystemItem>()
                     .Add(Restrictions.Like("Path.Parent", directory.Path.ToString(), MatchMode.Start))
                     .List<FileSystemItem>();
@@ -344,7 +469,9 @@ namespace N2.Edit.FileSystem.NH
                     item.Path.Rebase(source, target);
                 }
 
+                directory.Updated = Utility.CurrentTime();
                 directory.Path = target;
+                Session.Update(directory);
 
                 trx.Commit();
             }
@@ -357,18 +484,14 @@ namespace N2.Edit.FileSystem.NH
 
         public void DeleteDirectory(string virtualPath)
         {
-            var path = Path.Directory(virtualPath);
+            var path = FileSystemPath.Directory(virtualPath);
 
-            using (var trx = _sessionProvider.OpenSession.Session.BeginTransaction())
+            using (var trx = Session.BeginTransaction())
             {
+                DeleteDescendants(path);
+
                 var directory = GetSpecificItem(path);
-
-                _sessionProvider.OpenSession.Session
-                    .CreateQuery("delete from N2.Edit.FileSystem.NH.FileSystemItem where Path.Parent like :parent")
-                    .SetParameter("parent", path + "%")
-                    .ExecuteUpdate();
-
-                _sessionProvider.OpenSession.Session.Delete(directory);
+                Session.Delete(directory);
 
                 trx.Commit();
             }
@@ -379,16 +502,29 @@ namespace N2.Edit.FileSystem.NH
             }
         }
 
+        private void DeleteDescendants(FileSystemPath path)
+        {
+            int deletedChunks = Session.CreateQuery("delete from " + typeof(FileSystemChunk).Name + " fsc where fsc.BelongsTo.ID in (select fsi.ID from " + typeof(FileSystemItem).Name + " fsi where fsi.Path.Parent like :parent)")
+                .SetParameter("parent", path + "%")
+                .ExecuteUpdate();
+
+            int deletedItems = Session.CreateQuery("delete from " + typeof(FileSystemItem).Name + " fsi where fsi.Path.Parent like :parent")
+                .SetParameter("parent", path + "%")
+                .ExecuteUpdate();
+            
+            logger.Debug("Deleted " + deletedItems + " items and " + deletedChunks + " chunks below " + path);
+        }
+
         public void CreateDirectory(string virtualPath)
         {
-            var path = Path.Directory(virtualPath);
+            var path = FileSystemPath.Directory(virtualPath);
             // Ensure consistent behavoir with the System.UI.Directory methods used by mapped and virtual filesystem
             if(DirectoryExists(path.ToString()))
                 throw new IOException("The directory " + path.ToString() + " already exists.");
 
-            using (var trx = _sessionProvider.OpenSession.Session.BeginTransaction())
+            using (var trx = Session.BeginTransaction())
             {
-                _CreateDirectory(virtualPath);
+                CreateDirectoryInternal(virtualPath);
                 trx.Commit();
             }
 
@@ -398,9 +534,9 @@ namespace N2.Edit.FileSystem.NH
             }
         }
 
-        private void _CreateDirectory(string virtualPath)
+        private void CreateDirectoryInternal(string virtualPath)
         {
-            var path = Path.Directory(virtualPath);
+            var path = FileSystemPath.Directory(virtualPath);
 
             if (virtualPath != "/")
             {
@@ -410,10 +546,11 @@ namespace N2.Edit.FileSystem.NH
             var item = new FileSystemItem
                            {
                                Path = path,
-                               Created = DateTime.Now
+                               Created = Utility.CurrentTime(),
+                               Updated = Utility.CurrentTime()
                            };
 
-            _sessionProvider.OpenSession.Session.Save(item);
+            Session.Save(item);
         }
 
         public event EventHandler<FileEventArgs> FileWritten;
@@ -433,16 +570,6 @@ namespace N2.Edit.FileSystem.NH
 
             if(!IsStreamSizeOk(output))
                 throw new Exception("File with size " + output.Length + " could not be uploaded created because it exceeds the configured UploadFileMaxSize");
-        }
-
-        public void Start()
-        {
-            EventBroker.Instance.PreRequestHandlerExecute += UploadFileHttpHandler.HttpApplication_PreRequestHandlerExecute;
-        }
-
-        public void Stop()
-        {
-            EventBroker.Instance.PreRequestHandlerExecute -= UploadFileHttpHandler.HttpApplication_PreRequestHandlerExecute;
         }
     }
 }

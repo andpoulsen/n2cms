@@ -1,4 +1,4 @@
-﻿namespace N2.Collections
+namespace N2.Collections
 {
     /// <summary>
     /// A very positive filter that match any item.
@@ -8,6 +8,11 @@
         public override bool Match(ContentItem item)
         {
             return true;
+        }
+
+        public override string ToString()
+        {
+            return "Anything";
         }
     }
 }

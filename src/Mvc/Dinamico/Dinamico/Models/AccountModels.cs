@@ -1,9 +1,7 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
-using System.ComponentModel;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
-using System.Linq;
 using System.Web;
 using System.Web.Mvc;
 using System.Web.Security;
@@ -29,7 +27,8 @@ namespace Dinamico.Models
 
 		[DataType(DataType.Password)]
 		[Display(Name = "Confirm new password")]
-		[Compare("NewPassword", ErrorMessage = "The new password and confirmation password do not match.")]
+		[System.ComponentModel.DataAnnotations.Compare("NewPassword",
+			 ErrorMessage = "The new password and confirmation password do not match.")]
 		public string ConfirmPassword { get; set; }
 	}
 
@@ -68,12 +67,15 @@ namespace Dinamico.Models
 
 		[DataType(DataType.Password)]
 		[Display(Name = "Confirm password")]
-		[Compare("Password", ErrorMessage = "The password and confirmation password do not match.")]
+		[System.ComponentModel.DataAnnotations.Compare("Password",
+			 ErrorMessage = "The password and confirmation password do not match.")]
 		public string ConfirmPassword { get; set; }
 	}
+
 	#endregion
 
 	#region Services
+
 	// The FormsAuthentication type is sealed and contains static members, so it is difficult to
 	// unit test code that calls its members. The interface and helper class below demonstrate
 	// how to create an abstract wrapper around such a type in order to make the AccountController
@@ -105,26 +107,23 @@ namespace Dinamico.Models
 
 		public int MinPasswordLength
 		{
-			get
-			{
-				return _provider.MinRequiredPasswordLength;
-			}
+			get { return _provider.MinRequiredPasswordLength; }
 		}
 
 		public bool ValidateUser(string userName, string password)
 		{
-			if (String.IsNullOrEmpty(userName)) throw new ArgumentException("Value cannot be null or empty.", "userName");
-			if (String.IsNullOrEmpty(password)) throw new ArgumentException("Value cannot be null or empty.", "password");
+			if (string.IsNullOrEmpty(userName)) throw new ArgumentException("Value cannot be null or empty.", "userName");
+			if (string.IsNullOrEmpty(password)) throw new ArgumentException("Value cannot be null or empty.", "password");
 
 			return (_provider.ValidateUser(userName, password) && _provider.GetUser(userName, false).IsApproved)
-				|| FormsAuthentication.Authenticate(userName, password);
+			       || FormsAuthentication.Authenticate(userName, password);
 		}
 
 		public MembershipCreateStatus CreateUser(string userName, string password, string email)
 		{
-			if (String.IsNullOrEmpty(userName)) throw new ArgumentException("Value cannot be null or empty.", "userName");
-			if (String.IsNullOrEmpty(password)) throw new ArgumentException("Value cannot be null or empty.", "password");
-			if (String.IsNullOrEmpty(email)) throw new ArgumentException("Value cannot be null or empty.", "email");
+			if (string.IsNullOrEmpty(userName)) throw new ArgumentException("Value cannot be null or empty.", "userName");
+			if (string.IsNullOrEmpty(password)) throw new ArgumentException("Value cannot be null or empty.", "password");
+			if (string.IsNullOrEmpty(email)) throw new ArgumentException("Value cannot be null or empty.", "email");
 
 			MembershipCreateStatus status;
 			_provider.CreateUser(userName, password, email, null, null, true, null, out status);
@@ -133,15 +132,15 @@ namespace Dinamico.Models
 
 		public bool ChangePassword(string userName, string oldPassword, string newPassword)
 		{
-			if (String.IsNullOrEmpty(userName)) throw new ArgumentException("Value cannot be null or empty.", "userName");
-			if (String.IsNullOrEmpty(oldPassword)) throw new ArgumentException("Value cannot be null or empty.", "oldPassword");
-			if (String.IsNullOrEmpty(newPassword)) throw new ArgumentException("Value cannot be null or empty.", "newPassword");
+			if (string.IsNullOrEmpty(userName)) throw new ArgumentException("Value cannot be null or empty.", "userName");
+			if (string.IsNullOrEmpty(oldPassword)) throw new ArgumentException("Value cannot be null or empty.", "oldPassword");
+			if (string.IsNullOrEmpty(newPassword)) throw new ArgumentException("Value cannot be null or empty.", "newPassword");
 
 			// The underlying ChangePassword() will throw an exception rather
 			// than return false in certain failure scenarios.
 			try
 			{
-				MembershipUser currentUser = _provider.GetUser(userName, true /* userIsOnline */);
+				var currentUser = _provider.GetUser(userName, true /* userIsOnline */);
 				return currentUser.ChangePassword(oldPassword, newPassword);
 			}
 			catch (ArgumentException)
@@ -159,6 +158,7 @@ namespace Dinamico.Models
 	{
 		void SignIn(string userName, bool createPersistentCookie);
 		void SignOut();
+		void SignOut(string returnUrl);
 	}
 
 	[Service(typeof(IFormsAuthenticationService))]
@@ -166,7 +166,7 @@ namespace Dinamico.Models
 	{
 		public void SignIn(string userName, bool createPersistentCookie)
 		{
-			if (String.IsNullOrEmpty(userName)) throw new ArgumentException("Value cannot be null or empty.", "userName");
+			if (string.IsNullOrEmpty(userName)) throw new ArgumentException("Value cannot be null or empty.", "userName");
 
 			FormsAuthentication.SetAuthCookie(userName, createPersistentCookie);
 		}
@@ -175,10 +175,18 @@ namespace Dinamico.Models
 		{
 			FormsAuthentication.SignOut();
 		}
+
+		public void SignOut(string returnUrl)
+		{
+			FormsAuthentication.SignOut();
+			HttpContext.Current.Response.Redirect(returnUrl);
+		}
 	}
+
 	#endregion
 
 	#region Validation
+
 	public static class AccountValidation
 	{
 		public static string ErrorCodeToString(MembershipCreateStatus createStatus)
@@ -209,18 +217,21 @@ namespace Dinamico.Models
 					return "The user name provided is invalid. Please check the value and try again.";
 
 				case MembershipCreateStatus.ProviderError:
-					return "The authentication provider returned an error. Please verify your entry and try again. If the problem persists, please contact your system administrator.";
+					return
+						"The authentication provider returned an error. Please verify your entry and try again. If the problem persists, please contact your system administrator.";
 
 				case MembershipCreateStatus.UserRejected:
-					return "The user creation request has been canceled. Please verify your entry and try again. If the problem persists, please contact your system administrator.";
+					return
+						"The user creation request has been canceled. Please verify your entry and try again. If the problem persists, please contact your system administrator.";
 
 				default:
-					return "An unknown error occurred. Please verify your entry and try again. If the problem persists, please contact your system administrator.";
+					return
+						"An unknown error occurred. Please verify your entry and try again. If the problem persists, please contact your system administrator.";
 			}
 		}
 	}
 
-	[AttributeUsage(AttributeTargets.Field | AttributeTargets.Property, AllowMultiple = false, Inherited = true)]
+	[AttributeUsage(AttributeTargets.Field | AttributeTargets.Property)]
 	public sealed class ValidatePasswordLengthAttribute : ValidationAttribute, IClientValidatable
 	{
 		private const string _defaultErrorMessage = "'{0}' must be at least {1} characters long.";
@@ -231,25 +242,28 @@ namespace Dinamico.Models
 		{
 		}
 
+		public IEnumerable<ModelClientValidationRule> GetClientValidationRules(ModelMetadata metadata,
+			ControllerContext context)
+		{
+			return new[]
+			{
+				new ModelClientValidationStringLengthRule(FormatErrorMessage(metadata.GetDisplayName()), _minCharacters,
+					int.MaxValue)
+			};
+		}
+
 		public override string FormatErrorMessage(string name)
 		{
-			return String.Format(CultureInfo.CurrentCulture, ErrorMessageString,
+			return string.Format(CultureInfo.CurrentCulture, ErrorMessageString,
 				name, _minCharacters);
 		}
 
 		public override bool IsValid(object value)
 		{
-			string valueAsString = value as string;
-			return (valueAsString != null && valueAsString.Length >= _minCharacters);
-		}
-
-		public IEnumerable<ModelClientValidationRule> GetClientValidationRules(ModelMetadata metadata, ControllerContext context)
-		{
-			return new[]{
-                new ModelClientValidationStringLengthRule(FormatErrorMessage(metadata.GetDisplayName()), _minCharacters, int.MaxValue)
-            };
+			var valueAsString = value as string;
+			return (valueAsString != null) && (valueAsString.Length >= _minCharacters);
 		}
 	}
-	#endregion
 
+	#endregion
 }

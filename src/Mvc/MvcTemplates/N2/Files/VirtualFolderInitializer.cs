@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using N2.Configuration;
 using N2.Edit;
@@ -10,196 +10,94 @@ using N2.Persistence;
 using N2.Plugin;
 using N2.Web;
 using N2.Collections;
+using System.Linq;
 
 namespace N2.Management.Files
 {
-	/// <summary>
-	/// Auto-startable service that registers a custom <see cref="INodeProvider" /> within N2's <see cref="VirtualNodeFactory" /> infrastructure.
-	/// 
-	/// The <see cref="INodeProvider" /> provides the contents of the file manager library, effectively integrating the file manager with N2's page tree.
-	/// </summary>
-	[Service]
-	public class VirtualFolderInitializer : IAutoStart
-	{
-		FileSystemFolderCollection folders;
-		IHost host;
-		IPersister persister;
-		IFileSystem fs;
-		VirtualNodeFactory virtualNodes;
-		FolderNodeProvider nodeProvider;
-		DatabaseStatusCache dbStatus;
+    /// <summary>
+    /// Auto-startable service that registers a custom <see cref="INodeProvider" /> within N2's <see cref="VirtualNodeFactory" /> infrastructure.
+    /// 
+    /// The <see cref="INodeProvider" /> provides the contents of the file manager library, effectively integrating the file manager with N2's page tree.
+    /// </summary>
+    [Service]
+    public class VirtualFolderInitializer : IAutoStart
+    {
+        IHost host;
+        IPersister persister;
+        VirtualNodeFactory virtualNodes;
+        FolderNodeProvider nodeProvider;
+        ConnectionMonitor monitor;
+        UploadFolderSource folderSource;
 
-		/// <summary>
-		/// Initializes a new instance of the <see cref="VirtualFolderInitializer"/> class.
-		/// </summary>
-		/// <param name="host">The host.</param>
-		/// <param name="persister">The persister.</param>
-		/// <param name="fs">The fs.</param>
-		/// <param name="virtualNodes">The virtual nodes.</param>
-		/// <param name="editConfig">The edit config.</param>
-		public VirtualFolderInitializer(IHost host, IPersister persister, IFileSystem fs, VirtualNodeFactory virtualNodes, DatabaseStatusCache dbStatus, EditSection editConfig, ImageSizeCache imageSizes)
-		{
-			this.host = host;
-			this.persister = persister;
-			this.fs = fs;
-			this.virtualNodes = virtualNodes;
-			this.dbStatus = dbStatus;
-			this.folders = editConfig.UploadFolders;
+        /// <summary>
+        /// Initializes a new instance of the <see cref="VirtualFolderInitializer"/> class.
+        /// </summary>
+        /// <param name="host">The host.</param>
+        /// <param name="persister">The persister.</param>
+        /// <param name="fs">The fs.</param>
+        /// <param name="virtualNodes">The virtual nodes.</param>
+        /// <param name="editConfig">The edit config.</param>
+        public VirtualFolderInitializer(IHost host, IPersister persister, IFileSystem fs, VirtualNodeFactory virtualNodes, ConnectionMonitor monitor, UploadFolderSource folderSource, FolderNodeProvider nodeProvider)
+        {
+            this.host = host;
+            this.persister = persister;
+            this.virtualNodes = virtualNodes;
+            this.monitor = monitor;
+            this.folderSource = folderSource;
+            this.nodeProvider = nodeProvider;
+        }
 
-			nodeProvider = new FolderNodeProvider(fs, persister, imageSizes);
-		}
+        #region IAutoStart Members
 
-		#region IAutoStart Members
+        public void Start()
+        {
+            monitor.Online += monitor_Online;
+            host.SitesChanged += host_SitesChanged;
+        }
 
-		public void Start()
-		{
-			if (dbStatus.GetStatus() >= SystemStatusLevel.UpAndRunning)
-			{
-				nodeProvider.UploadFolderPaths = GetUploadFolderPaths();
-				virtualNodes.Register(nodeProvider);
-				host.SitesChanged += host_SitesChanged;
-			}
-			else
-				dbStatus.DatabaseStatusChanged += dbStatus_DatabaseStatusChanged;
-		}
+        public void Stop()
+        {
+            monitor.Online -= monitor_Online;
+            host.SitesChanged -= host_SitesChanged;
+        }
 
-		void dbStatus_DatabaseStatusChanged(object sender, EventArgs e)
-		{
-			dbStatus.DatabaseStatusChanged -= dbStatus_DatabaseStatusChanged;
-			Start();
-		}
+        #endregion
 
-		public void Stop()
-		{
-			host.SitesChanged -= host_SitesChanged;
-			virtualNodes.Unregister(nodeProvider);
-		}
+        void monitor_Online(object sender, EventArgs e)
+        {
+            nodeProvider.UploadFolderPaths = GetUploadFolderPaths().ToArray();
+        }
 
-		#endregion
+        void host_SitesChanged(object sender, SitesChangedEventArgs e)
+        {
+            nodeProvider.UploadFolderPaths = GetUploadFolderPaths().ToArray();
+        }
 
-		void host_SitesChanged(object sender, SitesChangedEventArgs e)
-		{
-			nodeProvider.UploadFolderPaths = GetUploadFolderPaths();
-		}
+        protected virtual IEnumerable<FolderReference> GetUploadFolderPaths()
+        {
+            var paths = new List<FolderReference>();
 
-		private FolderPair[] GetUploadFolderPaths()
-		{
-			var paths = new List<FolderPair>();
+            if (folderSource == null)
+                throw new NullReferenceException("folderSource is null");
+                //return new FolderPair[0];
+            
+            var gpp = new List<FileSystemRoot>(folderSource.GetUploadFoldersForAllSites()); // non-lazy easier to debug :-)
 
-			// configured folders to the root node
-			foreach (FolderElement folder in folders)
-			{
-				var root = persister.Get(host.DefaultSite.RootItemID);
-				var pair = new FolderPair(root.ID, root.Path, folder.Path.TrimStart('~'), folder.Path);
-				paths.Add(pair);
-			}
-			// site-upload folders to their respective nodes
-			paths.AddRange(UploadFoldersForSite(host.DefaultSite));
-			foreach (var site in host.Sites)
-			{
-				paths.AddRange(UploadFoldersForSite(site));
-			}
+            if (gpp == null)
+                throw new NullReferenceException("folderSource.GetUploadFoldersForAllSites() returned null");
 
-			return paths.ToArray();
-		}
+            // configured folders to the root node
+            foreach (var folder in gpp)
+            {
+                var parent = persister.Get(folder.GetParentID());
+                if (parent == null)
+                    break;
 
-		private IEnumerable<FolderPair> UploadFoldersForSite(Site site)
-		{
-			ContentItem item = persister.Get(site.StartPageID);
-			if (item == null)
-				yield break;
+                var pair = new FolderReference(parent.ID, parent.Path, parent.Path + folder.GetName() + "/", folder);
+                paths.Add(pair);
+            }
 
-			string itemPath = item.Path;
-			foreach (string path in site.UploadFolders)
-			{
-				yield return new FolderPair(item.ID, item.Path, itemPath + path.TrimStart('~', '/'), path);
-			}
-		}
-
-		/// <summary>
-		/// A custom <see cref="INodeProvider" /> that enumerates the FileSystem as special ContentItem instances
-		/// </summary>
-		class FolderNodeProvider : INodeProvider
-		{
-			IFileSystem fs;
-			IPersister persister;
-			ImageSizeCache imageSizes;
-
-			public FolderPair[] UploadFolderPaths { get; set; }
-
-			public FolderNodeProvider(IFileSystem fs, IPersister persister, ImageSizeCache imageSizes)
-			{
-				UploadFolderPaths = new FolderPair[0];
-				this.fs = fs;
-				this.persister = persister;
-				this.imageSizes = imageSizes;
-			}
-
-
-			#region INodeProvider Members
-
-			public ContentItem Get(string path)
-			{
-				foreach (var pair in UploadFolderPaths)
-				{
-					if (path.StartsWith(pair.Path, StringComparison.InvariantCultureIgnoreCase))
-					{
-						var dir = CreateDirectory(pair);
-
-						string remaining = path.Substring(pair.Path.Length);
-						if (string.IsNullOrEmpty(remaining))
-							return dir;
-						return dir.GetChild(remaining);
-					}
-				}
-
-				return null;
-			}
-
-			public IEnumerable<ContentItem> GetChildren(string path)
-			{
-				foreach (var pair in UploadFolderPaths)
-				{
-					if (pair.ParentPath.Equals(path, StringComparison.InvariantCultureIgnoreCase))
-					{
-						var dd = fs.GetDirectory(pair.FolderPath);
-						var dir = CreateDirectory(pair);
-						yield return dir;
-					}
-				}
-			}
-
-			private Directory CreateDirectory(FolderPair pair)
-			{
-				var dd = fs.GetDirectory(pair.FolderPath);
-				var parent = persister.Get(pair.ParentID);
-
-				var dir = Directory.New(dd, parent, fs, imageSizes);
-				dir.Title = pair.Path.Substring(pair.ParentPath.Length).Trim('/');
-				dir.Name = dir.Title;
-
-				return dir;
-			}
-
-			#endregion
-		}
-
-
-
-		struct FolderPair
-		{
-			public FolderPair(int parentID, string parentPath, string path, string folderPath)
-			{
-				ParentID = parentID;
-				Path = path;
-				ParentPath = parentPath;
-				FolderPath = folderPath;
-			}
-
-			public int ParentID;
-			public string Path;
-			public string ParentPath;
-			public string FolderPath;
-		}
-	}
+            return paths;
+        }
+    }
 }

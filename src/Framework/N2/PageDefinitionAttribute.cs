@@ -5,19 +5,16 @@ using N2.Installation;
 namespace N2
 {
 	/// <summary>
-	/// Defines a page (ASPX) available to the CMS and provides a way to define 
-	/// useful meta-data. Unlike <see cref="DefinitionAttribute"/> this attribute
-	/// makes more assumptions about the item beeing defined and provides more
-	/// meta-data options.
+	///     Defines a page (ASPX) available to the CMS and provides a way to define
+	///     useful meta-data. Unlike <see cref="DefinitionAttribute" /> this attribute
+	///     makes more assumptions about the item beeing defined and provides more
+	///     meta-data options.
 	/// </summary>
 	[AttributeUsage(AttributeTargets.Class, Inherited = false)]
 	public class PageDefinitionAttribute : AbstractDefinition
 	{
-		/// <summary>Instructs the installation screen how to treat this definition during installation.</summary>
-		public InstallerHint InstallerVisibility { get; set; }
-
 		public PageDefinitionAttribute(string title)
-			:this()
+			: this()
 		{
 			Title = title;
 		}
@@ -26,12 +23,15 @@ namespace N2
 		{
 			InstallerVisibility = InstallerHint.Default;
 			IsPage = true;
-			IconUrl = "{ManagementUrl}/Resources/icons/page.png";
 		}
+
+		/// <summary>Instructs the installation screen how to treat this definition during installation.</summary>
+		public InstallerHint InstallerVisibility { get; set; }
 
 		public override void Refine(ItemDefinition currentDefinition)
 		{
-			currentDefinition.Installer = InstallerVisibility;
+			if (InstallerVisibility != InstallerHint.Default)
+				currentDefinition.Installer = InstallerVisibility;
 
 			base.Refine(currentDefinition);
 		}

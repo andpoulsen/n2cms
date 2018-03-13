@@ -1,21 +1,24 @@
-﻿using System.Security.Principal;
+using System;
+using System.Security.Principal;
+using N2.Web;
 
 namespace N2
 {
 	/// <summary>
-	/// Represents a node in the tree in edit mode.
+	///     Represents a node in the tree in edit mode.
 	/// </summary>
-	public interface INode : N2.Web.ILink
+	[Obsolete("The role of this interface has been replaced by NodeAdapter.GetNode(item)")]
+	public interface INode : ILink
 	{
 		/// <summary>The name of the node.</summary>
 		string Name { get; }
-		
+
 		/// <summary>The logical path to the node from the root node.</summary>
 		string Path { get; }
-		
+
 		/// <summary>The url used to preview the node in edit mode.</summary>
 		string PreviewUrl { get; }
-		
+
 		/// <summary>Url to an icon image.</summary>
 		string IconUrl { get; }
 

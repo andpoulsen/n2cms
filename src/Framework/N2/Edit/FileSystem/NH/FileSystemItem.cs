@@ -1,21 +1,26 @@
-﻿using System;
+using System;
+using System.Collections.Generic;
 
 namespace N2.Edit.FileSystem.NH
 {
+    /// <summary>
+    /// A persisted file or folder in the file system.
+    /// </summary>
     public class FileSystemItem
     {
         public virtual int ID { get; protected set; }
-        public virtual Path Path { get; set; }
+        public virtual FileSystemPath Path { get; set; }
         public virtual DateTime Created { get; set; }
+        public virtual DateTime Updated { get; set; }
         public virtual long? Length { get; set; }
-        public virtual byte[] Data { get; set; }
+        //public virtual ICollection<FileSystemChunk> Chunks { get; set; }
 
         public virtual FileData ToFileData()
         {
             return new FileData
             {
                 Created = Created,
-                Updated = Created,
+                Updated = Updated,
                 VirtualPath = Path.ToString(),
                 Name = Path.Name,
                 Length = Length.Value
@@ -27,10 +32,11 @@ namespace N2.Edit.FileSystem.NH
             return new DirectoryData
             {
                 Created = Created,
-                Updated = Created,
+                Updated = Updated,
                 VirtualPath = Path.ToString(),
                 Name = Path.Name
             };
         }
+
     }
 }

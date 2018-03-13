@@ -6,19 +6,16 @@ using N2.Integrity;
 namespace N2
 {
 	/// <summary>
-	/// Defines a part (ASCX) available to the CMS and provides a way to define 
-	/// useful meta-data. Unlike <see cref="DefinitionAttribute"/> this attribute
-	/// makes more assumptions about the item beeing defined and provides more
-	/// meta-data options.
+	///     Defines a part (ASCX) available to the CMS and provides a way to define
+	///     useful meta-data. Unlike <see cref="DefinitionAttribute" /> this attribute
+	///     makes more assumptions about the item beeing defined and provides more
+	///     meta-data options.
 	/// </summary>
 	[AttributeUsage(AttributeTargets.Class, Inherited = false)]
 	public class PartDefinitionAttribute : AbstractDefinition
 	{
-		public AllowedZones AllowedIn { get; set; }
-		public string[] AllowedZoneNames { get; set; }
-
 		public PartDefinitionAttribute(string title)
-			:this()
+			: this()
 		{
 			Title = title;
 		}
@@ -26,8 +23,15 @@ namespace N2
 		public PartDefinitionAttribute()
 		{
 			IsPage = false;
-			IconUrl = "{ManagementUrl}/Resources/icons/page_white.png";
 			AllowedIn = AllowedZones.AllNamed;
+		}
+
+		public AllowedZones AllowedIn { get; set; }
+		public string[] AllowedZoneNames { get; set; }
+
+		protected override string DefaultIconClass
+		{
+			get { return "fa fa-file-o"; }
 		}
 
 		public override void Refine(ItemDefinition currentDefinition)
@@ -36,7 +40,7 @@ namespace N2
 
 			currentDefinition.AllowedIn = AllowedIn;
 			if (AllowedZoneNames != null)
-				foreach (string zoneName in AllowedZoneNames)
+				foreach (var zoneName in AllowedZoneNames)
 					currentDefinition.AddAllowedZone(zoneName);
 			currentDefinition.Installer = InstallerHint.NeverRootOrStartPage;
 		}

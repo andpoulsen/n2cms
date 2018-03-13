@@ -1,4 +1,4 @@
-﻿using System.Configuration;
+using System.Configuration;
 
 namespace N2.Configuration
 {
@@ -21,11 +21,27 @@ namespace N2.Configuration
 		}
 
 		/// <summary>Enable indexing of content.</summary>
+		[ConfigurationProperty("indexingEnabled", DefaultValue = true)]
+		public bool IndexingEnabled
+		{
+			get { return (bool)base["indexingEnabled"]; }
+			set { base["indexingEnabled"] = value; }
+		}
+
+		/// <summary>Enable indexing of content.</summary>
 		[ConfigurationProperty("enabled", DefaultValue = true)]
 		public bool Enabled
 		{
 			get { return (bool)base["enabled"]; }
 			set { base["enabled"] = value; }
+		}
+
+		/// <summary>Enable indexing of content.</summary>
+		[ConfigurationProperty("type", DefaultValue = "Lucene")]
+		public string Type
+		{
+			get { return (string)base["type"]; }
+			set { base["type"] = value; }
 		}
 
 		/// <summary>Try handling errors gracefully.</summary>
@@ -34,6 +50,28 @@ namespace N2.Configuration
 		{
 			get { return (bool)base["handleErrors"]; }
 			set { base["handleErrors"] = value; }
+		}
+
+		/// <summary>Only index on the machine with the given machine name.</summary>
+		[ConfigurationProperty("indexOnMachineNamed")]
+		public string IndexOnMachineNamed
+		{
+			get { return (string)base["indexOnMachineNamed"]; }
+			set { base["indexOnMachineNamed"] = value; }
+		}
+
+		[ConfigurationProperty("client")]
+		public ClientElement Client
+		{
+			get { return (ClientElement)base["client"]; }
+			set { base["client"] = value; }
+		}
+
+		[ConfigurationProperty("server")]
+		public ServerElement Server
+		{
+			get { return (ServerElement)base["server"]; }
+			set { base["server"] = value; }
 		}
 	}
 }

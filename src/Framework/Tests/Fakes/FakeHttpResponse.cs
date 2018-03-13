@@ -20,9 +20,19 @@ namespace N2.Tests.Fakes
 
 		public override int StatusCode { get; set; }
 
+		public override string ContentType { get; set; }
+
 		public override void Write(string s)
 		{
 			Output.Write(s);
+		}
+
+		public override HttpCachePolicyBase Cache
+		{
+			get
+			{
+				return new FakeHttpCachePolicy();
+			}
 		}
 	}
 }

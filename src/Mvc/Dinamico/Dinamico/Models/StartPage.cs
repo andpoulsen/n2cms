@@ -1,50 +1,51 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
-using System.Web;
+using Dinamico.Dinamico.Registrations;
 using N2;
-using N2.Integrity;
 using N2.Definitions;
 using N2.Details;
 using N2.Engine.Globalization;
-using System.Globalization;
-using N2.Web.UI;
+using N2.Installation;
 using N2.Web;
-using N2.Security;
 
 namespace Dinamico.Models
 {
-	[PageDefinition(
-		IconUrl = "{IconsUrl}/page_world.png",
-		InstallerVisibility = N2.Installation.InstallerHint.PreferredStartPage)]
-	[RestrictParents(typeof(IRootPage), typeof(LanguageIntersection))]
-	[RecursiveContainer(Defaults.Containers.Site, 1000,
-		RequiredPermission = Permission.Administer)]
-	[WithEditableTemplateSelection(ContainerName = Defaults.Containers.Metadata)]
-	public class StartPage : ContentPage, IStartPage, IStructuralPage, IThemeable, ILanguage, ISitesSource
+	/// <summary>
+	///     This is the start page on a site. Separate start pages can respond to
+	///     a domain name and/or form the root of translation. The registration of
+	///     this model is performed by <see cref="StartPageRegistration" />.
+	/// </summary>
+	[PageDefinition("Start Page",
+		 Description =
+			 "The topmost node of a site. This can be placed below a language intersection to also represent a language",
+		 IconClass = "fa fa-home",
+		 InstallerVisibility = InstallerHint.PreferredStartPage)]
+	[WithEditableTranslations(ContainerName = Defaults.Containers.Site)]
+	public class StartPage : ContentPage, IStartPage, IStructuralPage, IThemeable, ILanguage, ISitesSource, ITranslator
 	{
+		public virtual string FooterText { get; set; }
+
+		public virtual string Logotype { get; set; }
+
+		public virtual string Author { get; set; }
+
+		public virtual string Keywords { get; set; }
+
+		public virtual string Description { get; set; }
+
+		public virtual string LoginPage { get; set; }
+
 		#region IThemeable Members
 
-		[EditableThemeSelection(EnablePreview = true, ContainerName = Defaults.Containers.Site)]
+		[EditableThemeSelection(EnablePreview = true)]
 		public virtual string Theme { get; set; }
 
 		#endregion
 
 		#region ILanguage Members
 
-		public string FlagUrl
-		{
-			get
-			{
-				if (string.IsNullOrEmpty(LanguageCode))
-					return "";
-
-				string[] parts = LanguageCode.Split('-');
-				return N2.Web.Url.ResolveTokens(string.Format("~/N2/Resources/Img/Flags/{0}.png", parts[parts.Length - 1].ToLower()));
-			}
-		}
-
-		[EditableLanguagesDropDown("Language", 100, ContainerName = Defaults.Containers.Site)]
 		public virtual string LanguageCode { get; set; }
 
 		public string LanguageTitle
@@ -53,29 +54,30 @@ namespace Dinamico.Models
 			{
 				if (string.IsNullOrEmpty(LanguageCode))
 					return "";
-				else
-					return new CultureInfo(LanguageCode).DisplayName;
+				return new CultureInfo(LanguageCode).DisplayName;
 			}
 		}
 
 		#endregion
-		
-		[EditableFreeTextArea("Footer text", 200, ContainerName = Defaults.Containers.Site)]
-		[DisplayableTokens]
-		public virtual string FooterText { get; set; }
-
-		[EditableImageUpload(ContainerName = Defaults.Containers.Site)]
-		public virtual string Logotype { get; set; }
 
 		#region ISitesSource Members
 
-		[EditableText(Title = "Site host name (DNS)", ContainerName = Defaults.Containers.Site)]
 		public virtual string HostName { get; set; }
 
 		public IEnumerable<Site> GetSites()
 		{
 			if (!string.IsNullOrEmpty(HostName))
-				yield return new Site(Find.EnumerateParents(this, null, true).Last().ID, ID, HostName) { Wildcards = true };
+				yield return new Site(Find.EnumerateParents(this, null, true).Last().ID, ID, HostName) {Wildcards = true};
+		}
+
+		public string Translate(string key, string fallback = null)
+		{
+			return DetailCollections.GetTranslation(key) ?? fallback;
+		}
+
+		public IDictionary<string, string> GetTranslations()
+		{
+			return DetailCollections.GetTranslations();
 		}
 
 		#endregion

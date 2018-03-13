@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Web.UI.WebControls;
 
 namespace N2.Details
@@ -9,17 +9,18 @@ namespace N2.Details
     /// <remarks>
     /// Depending on the property type the values will be stored as enum, integer or string.
     /// </remarks>
+    [AttributeUsage(AttributeTargets.Property)]
     public class EditableEnumAttribute : EditableDropDownAttribute
     {
-		public EditableEnumAttribute()
-			: this("", 10, typeof(EmptyEnum))
-		{
-		}
+        public EditableEnumAttribute()
+            : this("", 10, typeof(EmptyEnum))
+        {
+        }
 
-		public EditableEnumAttribute(Type enumType)
-			: this("", 10, enumType)
-		{
-		}
+        public EditableEnumAttribute(Type enumType)
+            : this("", 10, enumType)
+        {
+        }
 
         public EditableEnumAttribute(string title, int sortOrder, Type enumType)
             : base(title, sortOrder)
@@ -31,15 +32,15 @@ namespace N2.Details
             EnumType = enumType;
         }
 
-		/// <summary>The type of enum listed by this editor.</summary>
-		public Type EnumType { get; set; }
+        /// <summary>The type of enum listed by this editor.</summary>
+        public Type EnumType { get; set; }
 
         protected override System.Web.UI.WebControls.ListItem[] GetListItems()
         {
             Array values = Enum.GetValues(EnumType);
             ListItem[] items = new ListItem[values.Length];
             for (int i = 0; i < values.Length; i++)
-			{
+            {
                 int value = (int)values.GetValue(i);
                 string name = Utility.GetGlobalResourceString(EnumType.Name, Enum.GetName(EnumType, value)) 
                     ?? Enum.GetName(EnumType, value);
@@ -51,42 +52,34 @@ namespace N2.Details
         protected override string GetValue(ContentItem item)
         {
             object value = item[Name];
-            
-            if(value == null)
+
+            return ConvertToString(value) ?? ConvertToString(DefaultValue);
+        }
+
+        protected override string ConvertToString(object value)
+        {
+            if (value == null)
                 return null;
 
             if (value is string)
                 // an enum as string we assume
                 return ((int)Enum.Parse(EnumType, (string)value)).ToString();
-            
+
             if (value is int)
                 // an enum as int we hope
                 return value.ToString();
-            
+
             // hopefully an enum type;
-            return ((int) value).ToString();
+            return ((int)value).ToString();
         }
 
-        protected override object GetValue(ListControl ddl)
+        protected override object ConvertToValue(string value)
         {
-            if (!string.IsNullOrEmpty(ddl.SelectedValue))
-                return GetEnumValue(int.Parse(ddl.SelectedValue));
-            else
-                return null;
+            return Enum.ToObject(EnumType, int.Parse(value));
         }
 
-        private object GetEnumValue(int value)
+        enum EmptyEnum
         {
-            foreach (object e in Enum.GetValues(EnumType))
-            {
-                if ((int)e == value)
-                    return e;
-            }
-            return null;
         }
-
-		enum EmptyEnum
-		{
-		}
     }
 }

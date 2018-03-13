@@ -1,4 +1,5 @@
 #region License
+
 /* Copyright (C) 2007 Cristian Libardo
  *
  * This is free software; you can redistribute it and/or modify it
@@ -16,48 +17,41 @@
  * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
  */
+
 #endregion
 
 using System;
 
 namespace N2
 {
-    /// <summary>
-    /// Event argument containing item data.
-    /// </summary>
-    public class CancellableItemEventArgs : ItemEventArgs
-    {
-        private bool cancel;
-		private Action<ContentItem> finalAction;
-
+	/// <summary>
+	///     Event argument containing item data.
+	/// </summary>
+	public class CancellableItemEventArgs : ItemEventArgs
+	{
 		/// <summary>Creates a new instance of the CancellableItemEventArgs.</summary>
 		/// <param name="item">The content item to reference with these arguements.</param>
 		/// <param name="finalAction">The action to perform unless the Cancel is set to true.</param>
 		public CancellableItemEventArgs(ContentItem item, Action<ContentItem> finalAction)
 			: base(item)
 		{
-			this.finalAction = finalAction;
+			FinalAction = finalAction;
 		}
 
-        /// <summary>Creates a new instance of the CancellableItemEventArgs.</summary>
-        /// <param name="item">The content item to reference with these arguements.</param>
-        public CancellableItemEventArgs(ContentItem item)
-            : base(item)
-        {
-        }
+		/// <summary>Creates a new instance of the CancellableItemEventArgs.</summary>
+		/// <param name="item">The content item to reference with these arguements.</param>
+		public CancellableItemEventArgs(ContentItem item)
+			: base(item)
+		{
+		}
 
-        /// <summary>Gets or sets whether the event with this argument should be cancelled.</summary>
-        public bool Cancel
-        {
-            get { return cancel; }
-            set { cancel = value; }
-        }
+		/// <summary>Gets or sets whether the event with this argument should be cancelled.</summary>
+		public bool Cancel { get; set; }
 
-		/// <summary>The action to execute unless the event is cancelled. This action can be exchanged by observers to alter the default behaviour.</summary>
-		public Action<ContentItem> FinalAction
-    	{
-    		get { return finalAction; }
-    		set { finalAction = value; }
-    	}
-    }
+		/// <summary>
+		///     The action to execute unless the event is cancelled. This action can be exchanged by observers to alter the
+		///     default behaviour.
+		/// </summary>
+		public Action<ContentItem> FinalAction { get; set; }
+	}
 }

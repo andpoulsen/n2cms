@@ -1,13 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Diagnostics.CodeAnalysis;
-using System.Linq;
-using System.Security.Principal;
-using System.Web;
+using System;
 using System.Web.Mvc;
-using System.Web.Routing;
 using System.Web.Security;
 using Dinamico.Models;
+using N2;
 
 namespace Dinamico.Controllers
 {
@@ -35,24 +30,17 @@ namespace Dinamico.Controllers
 		public ActionResult LogOn(LogOnModel model, string returnUrl)
 		{
 			if (ModelState.IsValid)
-			{
 				if (MembershipService.ValidateUser(model.UserName, model.Password))
 				{
 					FormsService.SignIn(model.UserName, model.RememberMe);
 					if (Url.IsLocalUrl(returnUrl))
-					{
 						return Redirect(returnUrl);
-					}
-					else
-					{
-						return Redirect(N2.Find.StartPage.Url);
-					}
+					return Redirect(Find.StartPage.Url);
 				}
 				else
 				{
 					ModelState.AddModelError("", "The user name or password provided is incorrect.");
 				}
-			}
 
 			// If we got this far, something failed, redisplay form
 			return View(model);
@@ -66,7 +54,7 @@ namespace Dinamico.Controllers
 		{
 			FormsService.SignOut();
 
-			return Redirect(N2.Find.StartPage.Url);
+			return Redirect(Find.StartPage.Url);
 		}
 
 		// **************************************
@@ -85,17 +73,14 @@ namespace Dinamico.Controllers
 			if (ModelState.IsValid)
 			{
 				// Attempt to register the user
-				MembershipCreateStatus createStatus = MembershipService.CreateUser(model.UserName, model.Password, model.Email);
+				var createStatus = MembershipService.CreateUser(model.UserName, model.Password, model.Email);
 
 				if (createStatus == MembershipCreateStatus.Success)
 				{
 					FormsService.SignIn(model.UserName, false /* createPersistentCookie */);
-					return Redirect(N2.Find.StartPage.Url);
+					return Redirect(Find.StartPage.Url);
 				}
-				else
-				{
-					ModelState.AddModelError("", AccountValidation.ErrorCodeToString(createStatus));
-				}
+				ModelState.AddModelError("", AccountValidation.ErrorCodeToString(createStatus));
 			}
 
 			// If we got this far, something failed, redisplay form
@@ -119,16 +104,10 @@ namespace Dinamico.Controllers
 		public ActionResult ChangePassword(ChangePasswordModel model)
 		{
 			if (ModelState.IsValid)
-			{
 				if (MembershipService.ChangePassword(User.Identity.Name, model.OldPassword, model.NewPassword))
-				{
 					return RedirectToAction("ChangePasswordSuccess");
-				}
 				else
-				{
 					ModelState.AddModelError("", "The current password is incorrect or the new password is invalid.");
-				}
-			}
 
 			// If we got this far, something failed, redisplay form
 			ViewBag.PasswordLength = MembershipService.MinPasswordLength;
@@ -143,6 +122,5 @@ namespace Dinamico.Controllers
 		{
 			return View();
 		}
-
 	}
 }

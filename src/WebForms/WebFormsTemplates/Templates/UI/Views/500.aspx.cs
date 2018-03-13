@@ -5,6 +5,8 @@ namespace N2.Templates.UI.Views
 {
     public partial class Error500 : System.Web.UI.Page
     {
+        private readonly Engine.Logger<Error500> logger;
+
         protected override void OnInit(EventArgs args)
         {
             Response.Status = "500 Internal Server Error";
@@ -15,14 +17,14 @@ namespace N2.Templates.UI.Views
                 {
                     var wc = N2.Context.Current.Resolve<N2.Web.IWebContext>();
                     wc.CurrentPage = page;
-					Server.Execute(Url.Parse(page.FindPath(PathData.DefaultAction).RewrittenUrl).AppendQuery("postback", page.Url));
+                    Server.Execute(Url.Parse(page.FindPath(PathData.DefaultAction).GetRewrittenUrl()).AppendQuery("postback", page.Url));
                     Response.End();
                     return;
                 }
             }
             catch(Exception ex)
             {
-                Trace.Write(ex.ToString());
+                logger.Error(ex.ToString());
             }
             Response.Write("<html><body><h1>500 Internal Server Error</h1></body></html>");
             Response.End();

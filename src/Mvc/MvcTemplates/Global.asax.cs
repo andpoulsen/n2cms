@@ -1,10 +1,10 @@
-﻿using System.Web;
+using System;
+using System.Web;
 using System.Web.Mvc;
 using System.Web.Routing;
 using N2.Engine;
 using N2.Templates.Mvc.Controllers;
 using N2.Web.Mvc;
-using N2.Templates.Mvc.Web;
 
 namespace N2.Templates.Mvc
 {
@@ -39,7 +39,7 @@ namespace N2.Templates.Mvc
 
 		public static void RegisterViewEngines(ViewEngineCollection viewEngines)
 		{
-			viewEngines.Insert(0, new ThemedMasterViewEngine());
+			viewEngines.RegisterThemeViewEngine<WebFormViewEngine>();
 		}
 
 		public static void RegisterRoutes(RouteCollection routes, IEngine engine)
@@ -49,8 +49,8 @@ namespace N2.Templates.Mvc
 			routes.MapRoute(
 				"Default", // Route name
 				"{controller}/{action}/{*id}", // URL with parameters
-                new { action = "Index", id = UrlParameter.Optional } // Parameter defaults
-				);
+				new {action = "Index", id = UrlParameter.Optional} // Parameter defaults
+			);
 		}
 	}
 }

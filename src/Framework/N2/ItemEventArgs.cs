@@ -1,4 +1,5 @@
 #region License
+
 /* Copyright (C) 2007 Cristian Libardo
  *
  * This is free software; you can redistribute it and/or modify it
@@ -16,34 +17,27 @@
  * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
  * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
  */
+
 #endregion
 
 using System;
-using System.Collections.Generic;
 
 namespace N2
 {
-    /// <summary>
-    /// Event argument containing item data.
-    /// </summary>
-    public class ItemEventArgs : EventArgs
-    {
-        private ContentItem affectedItem;
-
-        
-        /// <summary>Creates a new instance of the ItemEventArgs.</summary>
-        /// <param name="item">The item the associated with these event arguments.</param>
-        public ItemEventArgs(ContentItem item)
-        {
-            this.affectedItem = item;
-        }
+	/// <summary>
+	///     Event argument containing item data.
+	/// </summary>
+	public class ItemEventArgs : EventArgs
+	{
+		/// <summary>Creates a new instance of the ItemEventArgs.</summary>
+		/// <param name="item">The item the associated with these event arguments.</param>
+		public ItemEventArgs(ContentItem item)
+		{
+			AffectedItem = item;
+		}
 
 
-        /// <summary>Gets or sets the item associated with these arguments.</summary>
-        public ContentItem AffectedItem
-        {
-            get { return affectedItem; }
-            set { affectedItem = value; }
-        }
-    }
+		/// <summary>Gets or sets the item associated with these arguments.</summary>
+		public ContentItem AffectedItem { get; set; }
+	}
 }

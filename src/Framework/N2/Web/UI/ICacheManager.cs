@@ -1,4 +1,5 @@
-﻿using System.Web;
+using System;
+using System.Web;
 using System.Web.UI;
 
 namespace N2.Web.UI
@@ -7,7 +8,9 @@ namespace N2.Web.UI
     {
         bool Enabled { get; }
 
-        void AddCacheInvalidation(HttpResponse response);
+		void AddCacheInvalidation(ContentItem item, HttpResponse response);
+		[Obsolete]
+		void AddCacheInvalidation(HttpResponse response);
         OutputCacheParameters GetOutputCacheParameters();
-    }
+	}
 }

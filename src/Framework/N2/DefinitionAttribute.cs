@@ -5,10 +5,13 @@ using N2.Installation;
 namespace N2
 {
 	/// <summary>
-	/// Decoration for N2 content items. Provides information needed in edit 
-	/// mode and for data integrity.
+	///     Decoration for N2 content items. Provides information needed in edit
+	///     mode and for data integrity.
 	/// </summary>
-	/// <remarks>This attribute may be deprecated in the future. Use <see cref="PageDefinitionAttribute"/> or <see cref="PartDefinitionAttribute"/> instead.</remarks>
+	/// <remarks>
+	///     This attribute may be deprecated in the future. Use <see cref="PageDefinitionAttribute" /> or
+	///     <see cref="PartDefinitionAttribute" /> instead.
+	/// </remarks>
 	[AttributeUsage(AttributeTargets.Class, Inherited = false)]
 	public class DefinitionAttribute : AbstractDefinition, ISimpleDefinitionRefiner
 
@@ -17,7 +20,6 @@ namespace N2
 		{
 			Installer = InstallerHint.Default;
 			IsPage = true;
-			IconUrl = "{ManagementUrl}/Resources/icons/page.png";
 		}
 
 		/// <summary>Initializes a new instance of ItemAttribute class.</summary>
@@ -30,7 +32,10 @@ namespace N2
 
 		/// <summary>Initializes a new instance of ItemAttribute class.</summary>
 		/// <param name="title">The title used when presenting this item type to editors.</param>
-		/// <param name="name">The name/discriminator needed to map the appropriate type with content data when retrieving from persistence. When this is null the type's full name is used.</param>
+		/// <param name="name">
+		///     The name/discriminator needed to map the appropriate type with content data when retrieving from
+		///     persistence. When this is null the type's full name is used.
+		/// </param>
 		public DefinitionAttribute(string title, string name)
 			: this(title)
 		{
@@ -39,7 +44,10 @@ namespace N2
 
 		/// <summary>Initializes a new instance of ItemAttribute class.</summary>
 		/// <param name="title">The title used when presenting this item type to editors.</param>
-		/// <param name="name">The name/discriminator needed to map the appropriate type with content data when retrieving from persistence. When this is null the type's name is used.</param>
+		/// <param name="name">
+		///     The name/discriminator needed to map the appropriate type with content data when retrieving from
+		///     persistence. When this is null the type's name is used.
+		/// </param>
 		/// <param name="description">The description of this item.</param>
 		/// <param name="toolTip">The tool tip displayed when hovering over this item type.</param>
 		/// <param name="sortOrder">The order of this type compared to other items types.</param>
@@ -52,7 +60,7 @@ namespace N2
 		}
 
 		/// <summary>
-		/// Gets or sets how to treat this definition during installation.
+		///     Gets or sets how to treat this definition during installation.
 		/// </summary>
 		public InstallerHint Installer { get; set; }
 
